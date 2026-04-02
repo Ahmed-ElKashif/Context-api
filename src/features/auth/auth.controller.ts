@@ -1,14 +1,16 @@
 import { Request, Response, NextFunction } from 'express'
 import bcrypt from 'bcryptjs'
-import jwt from 'jsonwebtoken'
+import jwt, { SignOptions } from 'jsonwebtoken'
 import { User } from '../users/user.model'
 import { AppError } from '../../core/errors/AppError'
 
 // Helper function to generate tokens
 const generateToken = (id: string) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET as string, {
-    expiresIn: (process.env.JWT_EXPIRES_IN || '30d') as any
-  })
+  const options: SignOptions = {
+    expiresIn: (process.env.JWT_EXPIRES_IN as SignOptions['expiresIn']) || '30d'
+  }
+
+  return jwt.sign({ id }, process.env.JWT_SECRET as string, options)
 }
 
 export const register = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -40,7 +42,7 @@ export const register = async (req: Request, res: Response, next: NextFunction):
       success: true,
       token,
       user: {
-        id: user._id,
+        id: user.id,
         name: user.name,
         email: user.email
       }
