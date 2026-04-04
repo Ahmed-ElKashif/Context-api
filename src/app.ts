@@ -7,7 +7,6 @@ import { globalErrorHandler } from './core/middlewares/error.middleware'
 import path from 'path'
 import authRoutes from './features/auth/auth.routes'
 import userRoutes from './features/users/user.routes'
-
 const app: Application = express()
 
 // Global Middlewares
