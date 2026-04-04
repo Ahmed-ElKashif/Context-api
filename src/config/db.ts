@@ -2,7 +2,6 @@ import mongoose from 'mongoose'
 
 export const connectDB = async (): Promise<void> => {
   try {
-    // We get the connection string from our environment variables
     const mongoURI = process.env.MONGO_URI
 
     if (!mongoURI) {
@@ -10,9 +9,9 @@ export const connectDB = async (): Promise<void> => {
     }
 
     const conn = await mongoose.connect(mongoURI)
-    console.log(`✅ MongoDB Connected: ${conn.connection.host}`)
+    console.log(`MongoDB Connected: ${conn.connection.host}`)
   } catch (error) {
-    console.error(`❌ Error connecting to MongoDB:`, error)
+    console.error(`Error connecting to MongoDB:`, error)
     // Exit process with failure code
     process.exit(1)
   }
