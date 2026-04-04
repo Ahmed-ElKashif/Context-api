@@ -1,12 +1,18 @@
 import mongoose, { Document, Schema } from 'mongoose'
+ 
+
 import { IDocument } from '../documents/document.model'
+
 
 // 1. TypeScript Interface (For autocomplete in VS Code)
 export interface IUser extends Document {
   name: string
   email: string
   passwordHash: string
+
+
   files?: IDocument[] //  (It's optional because it only exists if you populate it)
+
   createdAt: Date
   updatedAt: Date
 }
