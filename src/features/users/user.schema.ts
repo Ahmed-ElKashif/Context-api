@@ -2,7 +2,21 @@ import { z } from 'zod'
 
 export const updateProfileSchema = z.object({
   body: z.object({
-    name: z.string().min(2, 'Name must be at least 2 characters').optional(),
-    password: z.string().min(6, 'Password must be at least 6 characters').optional()
+    fullName: z.string().min(1, 'Full Name is required').max(50, 'Name is too long').optional(),
+
+    username: z
+      .string()
+      .min(3, 'Username must be at least 3 characters')
+      .regex(/^[a-zA-Z0-9_]+$/, 'Letters, numbers, and underscores only')
+      .optional(),
+
+    password: z
+      .string()
+      .min(8, 'Master key must be at least 8 characters')
+      .regex(/[A-Z]/, 'Must contain at least one uppercase letter')
+      .regex(/[0-9]/, 'Must contain at least one number')
+      .optional(),
+
+    persona: z.enum(['general', 'professional', 'student', 'developer']).optional()
   })
 })

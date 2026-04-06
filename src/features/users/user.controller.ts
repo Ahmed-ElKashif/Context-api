@@ -1,7 +1,7 @@
-import { Request, Response, NextFunction } from 'express';
-import { User } from './user.model';
-import { AppError } from '../../core/errors/AppError';
-import bcrypt from 'bcryptjs'; 
+import { Request, Response, NextFunction } from 'express'
+import { User } from './user.model'
+import { AppError } from '../../core/errors/AppError'
+import bcrypt from 'bcryptjs'
 
 // @route   GET /api/users/profile
 // @access  Private (Requires JWT)
@@ -12,25 +12,27 @@ export const getUserProfile = async (
 ): Promise<void> => {
   try {
     // req.user is guaranteed by our requireAuth middleware
-    const user = await User.findById(req.user?._id);
+    const user = await User.findById(req.user?._id)
 
     if (!user) {
-      return next(new AppError('User not found', 404));
+      return next(new AppError('User not found', 404))
     }
 
     res.status(200).json({
       success: true,
       data: {
         id: user._id,
-        name: user.name,
+        fullName: user.fullName,
+        username: user.username,
         email: user.email,
-        createdAt: user.createdAt,
-      },
-    });
+        persona: user.persona,
+        createdAt: user.createdAt
+      }
+    })
   } catch (error) {
-    next(error);
+    next(error)
   }
-};
+}
 
 // @route   PUT /api/users/profile
 // @access  Private (Requires JWT)
@@ -40,33 +42,46 @@ export const updateUserProfile = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const user = await User.findById(req.user?._id);
+    const user = await User.findById(req.user?._id)
 
     if (!user) {
-      return next(new AppError('User not found', 404));
+      return next(new AppError('User not found', 404))
     }
 
-    // Update the basic fields
-    user.name = req.body.name || user.name;
-    user.email = req.body.email || user.email;
+    const { fullName, username, password, persona } = req.body
 
-    // Because we don't have a schema hook, we hash it manually here!
-    if (req.body.password) {
-      const salt = await bcrypt.genSalt(10);
-      user.passwordHash = await bcrypt.hash(req.body.password, salt);
+    // If they want to change their username, check if it's taken!
+    if (username && username !== user.username) {
+      const usernameTaken = await User.findOne({ username })
+      if (usernameTaken) {
+        return next(new AppError('This username is already taken', 400))
+      }
+      user.username = username
     }
 
-    const updatedUser = await user.save();
+    // Update the other basic fields if they were provided
+    if (fullName) user.fullName = fullName
+    if (persona) user.persona = persona
+
+    // Hash the new password manually before saving
+    if (password) {
+      const salt = await bcrypt.genSalt(10)
+      user.passwordHash = await bcrypt.hash(password, salt)
+    }
+
+    const updatedUser = await user.save()
 
     res.status(200).json({
       success: true,
       data: {
         id: updatedUser._id,
-        name: updatedUser.name,
+        fullName: updatedUser.fullName,
+        username: updatedUser.username,
         email: updatedUser.email,
-      },
-    });
+        persona: updatedUser.persona
+      }
+    })
   } catch (error) {
-    next(error);
+    next(error)
   }
-};
+}
