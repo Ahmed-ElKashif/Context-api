@@ -13,12 +13,18 @@ const generateToken = (id: string) => {
 
 export const register = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const { name, email, password } = req.body
-
+    const { fullName, username, email, password, persona } = req.body
     // 1. Check if user already exists
-    const userExists = await User.findOne({ email })
+    const userExists = await User.findOne({
+      $or: [{ email }, { username }] // Searches for either match
+    })
     if (userExists) {
-      return next(new AppError('User with this email already exists', 400))
+      if (userExists.email === email) {
+        return next(new AppError('User with this email already exists', 400))
+      }
+      if (userExists.username === username) {
+        return next(new AppError('This username is already taken', 400))
+      }
     }
 
     // 2. Hash the password before saving to the database
@@ -27,9 +33,11 @@ export const register = async (req: Request, res: Response, next: NextFunction):
 
     // 3. Create the user
     const user = await User.create({
-      name,
+      fullName,
+      username,
       email,
-      passwordHash: hashedPassword
+      passwordHash: hashedPassword,
+      persona
     })
 
     // 4. Generate the VIP Pass (Token)
@@ -41,8 +49,10 @@ export const register = async (req: Request, res: Response, next: NextFunction):
       token,
       user: {
         id: user._id,
-        name: user.name,
-        email: user.email
+        fullName: user.fullName,
+        username: user.username,
+        email: user.email,
+        persona: user.persona
       }
     })
   } catch (error) {
@@ -74,8 +84,10 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
       token,
       user: {
         id: user.id,
-        name: user.name,
-        email: user.email
+        fullName: user.fullName,
+        username: user.username,
+        email: user.email,
+        persona: user.persona
       }
     })
   } catch (error) {

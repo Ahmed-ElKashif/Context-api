@@ -1,16 +1,15 @@
 import mongoose, { Document, Schema } from 'mongoose'
- 
 
 import { IDocument } from '../documents/document.model'
 
-
 // 1. TypeScript Interface (For autocomplete in VS Code)
 export interface IUser extends Document {
-  name: string
+  fullName: string // 👈 Renamed from 'name'
+  username: string
   email: string
   passwordHash: string
 
-
+  persona: 'general' | 'professional' | 'student' | 'developer'
   files?: IDocument[] //  (It's optional because it only exists if you populate it)
 
   createdAt: Date
@@ -20,7 +19,14 @@ export interface IUser extends Document {
 // 2. Mongoose Schema (The Database Rules)
 const userSchema = new Schema<IUser>(
   {
-    name: { type: String, required: true, trim: true },
+    fullName: { type: String, required: true, trim: true },
+    username: {
+      type: String,
+      required: true,
+      unique: true, // 👈 Usernames must be unique!
+      trim: true,
+      lowercase: true
+    },
     email: {
       type: String,
       required: true,
@@ -28,7 +34,13 @@ const userSchema = new Schema<IUser>(
       lowercase: true,
       trim: true
     },
-    passwordHash: { type: String, required: true }
+    passwordHash: { type: String, required: true },
+    persona: {
+      type: String,
+      required: true,
+      enum: ['general', 'professional', 'student', 'developer'],
+      default: 'general'
+    }
   },
   {
     timestamps: true // Automatically manages createdAt and updatedAt
