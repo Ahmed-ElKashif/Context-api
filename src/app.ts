@@ -8,6 +8,7 @@ import path from 'path'
 import authRoutes from './features/auth/auth.routes'
 import userRoutes from './features/users/user.routes'
 const app: Application = express()
+import documentRoutes from './features/documents/document.routes'
 
 // Global Middlewares
 app.use(helmet()) // Security headers
@@ -26,6 +27,8 @@ app.get('/api/health', (req: Request, res: Response) => {
 app.use('/api/auth', authRoutes)
 
 app.use('/api/users', userRoutes)
+
+app.use('/api/documents', documentRoutes)
 // 404 Handler for undefined routes
 app.use((req: Request, res: Response, next: NextFunction) => {
   next(new AppError(`Route ${req.originalUrl} not found`, 404))

@@ -1,74 +1,71 @@
-// import { Request, Response, NextFunction } from 'express';
-// import { IDocument } from './document.model'; /* come in week   */
-// import { AppError } from '../../core/errors/AppError';
+import { Request, Response, NextFunction } from 'express'
+import { DocumentModel } from './document.model'
 
-// @route   POST /api/documents/upload
-// @access  Private (Requires JWT)
-// export const uploadDocument = async (
-//   req: Request,
-//   res: Response,
-//   next: NextFunction
-// ): Promise<void> => {
-//   try {
-//     // req.user is guaranteed to exist because of our requireAuth middleware!
-//     const userId = req.user?._id;
+export const getAllDocuments = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    // 1. Ensure user is authenticated
+    const userId = req.user?._id
 
-//     // Extract metadata from the request body (Frontend sends this alongside the file)
-//     const { title, sourceType, folderContext, rawText } = req.body;
+    // 2. Pagination Setup
+    // Fallbacks: default to page 1, limit to 10 items per page
+    const page = parseInt(req.query.page as string, 10) || 1
+    const limit = parseInt(req.query.limit as string, 10) || 10
+    const skip = (page - 1) * limit
 
-//     if (!sourceType) {
-//       return next(new AppError('Please provide a sourceType (PDF, Word, Image, TextSnippet)', 400));
-//     }
+    // 3. Sorting Setup
+    // Default to newest first (createdAt, descending)
+    const sortBy = (req.query.sortBy as string) || 'createdAt'
+    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1
 
-//     // --- SCENARIO A: The Text Snippet (No file, just raw text) ---
-//     if (sourceType === 'TextSnippet') {
-//       if (!rawText) {
-//         return next(new AppError('rawText is required when creating a TextSnippet', 400));
-//       }
+    // 4. Filtering Setup (Security: ALWAYS restrict to the logged-in user's files!)
+    const query: any = { user: userId }
 
-//       const doc = await IDocument.create({
-//         user: userId,
-//         title: title || `Snippet: ${rawText.substring(0, 15)}...`, // Auto-generate title if missing
-//         sourceType,
-//         rawText,
-//         cognitiveLoad: 'Light', // Snippets are always light
-//         processingStatus: 'Completed', // Text is already extracted, no AI parsing needed yet!
-//         folderContext
-//       });
+    // Optional Filter: Tags
+    // Example URL: /api/documents?tags=study,ai
+    if (req.query.tags) {
+      const tagsArray = (req.query.tags as string).split(',').map((tag) => tag.trim())
+      // $in means: "Find documents where the tags array contains ANY of these tags"
+      query.tags = { $in: tagsArray }
+    }
 
-//       res.status(201).json({ success: true, data: doc });
-//       return;
-//     }
+    // Optional Filter: File Type
+    // Example URL: /api/documents?fileType=PDF
+    if (req.query.fileType) {
+      query.fileType = req.query.fileType
+    }
 
-//     // --- SCENARIO B: File Upload (PDF, Word, Image) ---
-//     if (!req.file) {
-//       return next(new AppError('Please upload a valid file', 400));
-//     }
+    // Optional Filter: Cognitive Load
+    if (req.query.cognitiveLoad) {
+      query.cognitiveLoad = req.query.cognitiveLoad
+    }
 
-//     // MVP Logic: Estimate Cognitive Load based on file size
-//     const fileSizeInMB = req.file.size / (1024 * 1024);
-//     let estimatedLoad = 'Medium';
-//     if (fileSizeInMB < 1) estimatedLoad = 'Light';
-//     if (fileSizeInMB > 5) estimatedLoad = 'Heavy';
+    // 5. Execute Database Query
+    const documents = await DocumentModel.find(query)
+      .sort({ [sortBy]: sortOrder }) // Apply sorting dynamically
+      .skip(skip) // Skip previous pages
+      .limit(limit) // Limit items returned
+      .select('-extractedText -__v') // 🚀 SENIOR MOVE: Exclude heavy text to keep API fast!
 
-//     const doc = await IDocument.create({
-//       user: userId,
-//       title: title || req.file.originalname, // Fallback to original file name
-//       sourceType,
-//       originalUrl: `/uploads/${req.file.filename}`, // Save the path to the local Multer folder
-//       cognitiveLoad: estimatedLoad,
-//       processingStatus: 'Pending', // We will build the AI queue later!
-//       folderContext
-//     });
+    // 6. Get total count for frontend pagination UI
+    const totalDocuments = await DocumentModel.countDocuments(query)
 
-//     res.status(201).json({ success: true, data: doc });
-
-//   } catch (error) {
-//     next(error);
-//   }
-// };
-
-// this file is currently empty because we moved the upload logic to a new file called upload.controller.ts
-//  to keep things organized. The document.controller.ts will eventually hold other document-related endpoints
-// like fetching,
-//  updating, and deleting documents.
+    // 7. Send standard JSON response
+    res.status(200).json({
+      success: true,
+      count: documents.length,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalDocuments / limit),
+        totalItems: totalDocuments,
+        limit
+      },
+      data: documents
+    })
+  } catch (error) {
+    next(error)
+  }
+}
