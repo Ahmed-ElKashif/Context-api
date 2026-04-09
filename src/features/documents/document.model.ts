@@ -45,7 +45,7 @@ const documentSchema = new Schema<IDocument>(
       default: 'Light'
     },
     summary: { type: String },
-    tags: [{ type: String }],
+    tags: { type: [String], default: [] },
     extractedText: { type: String },
     folderId: { type: Schema.Types.ObjectId, ref: 'Folder' },
     originalFilePath: { type: String } // Not required for TextSnippets!
