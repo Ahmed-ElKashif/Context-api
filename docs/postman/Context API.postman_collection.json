@@ -2,9 +2,7 @@
   "info": {
     "_postman_id": "c720afff-3c90-4804-bd99-341ca40a7beb",
     "name": "Context API",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
-    "_exporter_id": "52405533",
-    "_collection_link": "https://go.postman.co/collection/52405533-c720afff-3c90-4804-bd99-341ca40a7beb?source=collection_link"
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
@@ -25,8 +23,7 @@
                   "    console.log(\"Token saved automatically!\");\r",
                   "}"
                 ],
-                "type": "text/javascript",
-                "packages": {}
+                "type": "text/javascript"
               }
             }
           ],
@@ -35,7 +32,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\r\n  \"email\": \"ahmed@test.com\",\r\n  \"password\": \"password123\"\r\n}",
+              "raw": "{\r\n  \"email\": \"ahmed@company.com\",\r\n  \"password\": \"Password123!\"\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -45,18 +42,34 @@
             "url": {
               "raw": "http://localhost:5000/api/auth/login",
               "protocol": "http",
-              "host": [
-                "localhost"
-              ],
+              "host": ["localhost"],
               "port": "5000",
-              "path": [
-                "api",
-                "auth",
-                "login"
-              ]
+              "path": ["api", "auth", "login"]
             }
-          },
-          "response": []
+          }
+        },
+        {
+          "name": "Basic Register",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"fullName\": \"Ahmed El-Kashif\",\r\n  \"username\": \"ahmed_kashif\",\r\n  \"email\": \"ahmed@company.com\",\r\n  \"password\": \"Password123!\",\r\n  \"persona\": \"developer\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/auth/register",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5000",
+              "path": ["api", "auth", "register"]
+            }
+          }
         },
         {
           "name": "Get Profile",
@@ -76,58 +89,11 @@
             "url": {
               "raw": "http://localhost:5000/api/users/profile",
               "protocol": "http",
-              "host": [
-                "localhost"
-              ],
+              "host": ["localhost"],
               "port": "5000",
-              "path": [
-                "api",
-                "users",
-                "profile"
-              ]
+              "path": ["api", "users", "profile"]
             }
-          },
-          "response": []
-        },
-        {
-          "name": "Basic Register",
-          "request": {
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{token}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "method": "POST",
-            "header": [],
-            "body": {
-              "mode": "raw",
-              "raw": "{\r\n  \"name\": \"Ali\",\r\n  \"email\": \"ali@test.com\",\r\n  \"password\": \"123\"\r\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            },
-            "url": {
-              "raw": "http://localhost:5000/api/auth/register",
-              "protocol": "http",
-              "host": [
-                "localhost"
-              ],
-              "port": "5000",
-              "path": [
-                "api",
-                "auth",
-                "register"
-              ]
-            }
-          },
-          "response": []
+          }
         },
         {
           "name": "Profile Updates",
@@ -146,7 +112,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\r\n  \"password\": \"newpassword999\"\r\n}",
+              "raw": "{\r\n  \"password\": \"NewPassword999!\"\r\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -156,18 +122,135 @@
             "url": {
               "raw": "http://localhost:5000/api/users/profile",
               "protocol": "http",
-              "host": [
-                "localhost"
-              ],
+              "host": ["localhost"],
               "port": "5000",
-              "path": [
-                "api",
-                "users",
-                "profile"
+              "path": ["api", "users", "profile"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Documents",
+      "item": [
+        {
+          "name": "Upload Physical File (PDF/Image)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "fileType",
+                  "value": "PDF",
+                  "type": "text"
+                },
+                {
+                  "key": "title",
+                  "value": "My ITI Lecture",
+                  "type": "text"
+                },
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/documents/upload",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5000",
+              "path": ["api", "documents", "upload"]
+            }
+          }
+        },
+        {
+          "name": "Upload Text Snippet",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\r\n  \"fileType\": \"TextSnippet\",\r\n  \"title\": \"React useEffect Note\",\r\n  \"extractedText\": \"Remember to use dependency arrays to prevent infinite loops.\",\r\n  \"tags\": \"[\\\"react\\\", \\\"frontend\\\"]\"\r\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "http://localhost:5000/api/documents/upload",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5000",
+              "path": ["api", "documents", "upload"]
+            }
+          }
+        },
+        {
+          "name": "Get All Documents",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:5000/api/documents?page=1&limit=10&sortBy=createdAt&sortOrder=desc",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5000",
+              "path": ["api", "documents"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "sortBy",
+                  "value": "createdAt"
+                },
+                {
+                  "key": "sortOrder",
+                  "value": "desc"
+                }
               ]
             }
-          },
-          "response": []
+          }
         }
       ]
     }
