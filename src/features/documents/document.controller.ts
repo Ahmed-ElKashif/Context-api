@@ -1,6 +1,11 @@
 import { Request, Response, NextFunction } from 'express'
 import { DocumentModel } from './document.model'
+import { AppError } from '../../core/errors/AppError'
+import fs from 'fs'
+import path from 'path'
 
+// @route   GET /api/documents
+// @access  Private
 export const getAllDocuments = async (
   req: Request,
   res: Response,
@@ -48,7 +53,7 @@ export const getAllDocuments = async (
       .sort({ [sortBy]: sortOrder }) // Apply sorting dynamically
       .skip(skip) // Skip previous pages
       .limit(limit) // Limit items returned
-      .select('-extractedText -__v') // 🚀 SENIOR MOVE: Exclude heavy text to keep API fast!
+      .select('-extractedText -__v') // SENIOR MOVE: Exclude heavy text to keep API fast!
 
     // 6. Get total count for frontend pagination UI
     const totalDocuments = await DocumentModel.countDocuments(query)
@@ -65,6 +70,72 @@ export const getAllDocuments = async (
       },
       data: documents
     })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// @route   PUT /api/documents/:id
+// @access  Private
+export const updateDocument = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params
+    const { title, tags, cognitiveLoad, folderId } = req.body
+
+    // 1. Find the document and ensure it belongs to the current user
+    const document = await DocumentModel.findOne({ _id: id, user: req.user?._id })
+
+    if (!document) {
+      return next(new AppError('Document not found or unauthorized', 404))
+    }
+
+    // 2. Update allowed fields
+    if (title) document.title = title
+    if (tags) document.tags = tags
+    if (cognitiveLoad) document.cognitiveLoad = cognitiveLoad
+    if (folderId) document.folderId = folderId
+
+    await document.save()
+
+    res.status(200).json({ success: true, data: document })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// @route   DELETE /api/documents/:id
+// @access  Private
+export const deleteDocument = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params
+
+    // 1. Find the document and ensure it belongs to the current user
+    const document = await DocumentModel.findOne({ _id: id, user: req.user?._id })
+
+    if (!document) {
+      return next(new AppError('Document not found or unauthorized', 404))
+    }
+
+    // 2. File System Cleanup: Delete the physical file from the hard drive if it exists
+    if (document.originalFilePath) {
+      const filePath = path.join(process.cwd(), document.originalFilePath)
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath) // Removes the file from the uploads folder
+      }
+    }
+
+    // 3. Remove the document record from the database
+    await document.deleteOne()
+
+    res.status(200).json({ success: true, message: 'Document deleted successfully' })
   } catch (error) {
     next(error)
   }
