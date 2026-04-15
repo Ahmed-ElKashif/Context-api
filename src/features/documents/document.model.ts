@@ -18,8 +18,11 @@ export interface IDocument extends Document {
   extractedText?: string // The raw text for the Semantic Search later
 
   // Storage & Organization
-  folderId?: mongoose.Types.ObjectId // For the "Smart Classification" feature
   originalFilePath?: string // Where the actual PDF/Image lives (AWS S3 or Local)
+
+  // --- NEW: AI Semantic Organizer Fields (Materialized Paths) ---
+  originalClientPath?: string // BEFORE: The messy path from their local machine (e.g., "Downloads/invoice.pdf")
+  semanticPath?: string // AFTER: The clean AI-generated path or existing taxonomy path (e.g., "Work/Invoices/invoice.pdf")
 
   createdAt: Date
   updatedAt: Date
@@ -47,8 +50,12 @@ const documentSchema = new Schema<IDocument>(
     summary: { type: String },
     tags: { type: [String], default: [] },
     extractedText: { type: String },
-    folderId: { type: Schema.Types.ObjectId, ref: 'Folder' },
-    originalFilePath: { type: String } // Not required for TextSnippets!
+
+    originalFilePath: { type: String }, // Not required for TextSnippets!
+
+    // Semantic Paths for the "Before & After" Feature
+    originalClientPath: { type: String, default: '/' },
+    semanticPath: { type: String, default: '/' }
   },
   { timestamps: true }
 )
