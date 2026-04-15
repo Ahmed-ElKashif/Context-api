@@ -1,13 +1,10 @@
 import { Request, Response, NextFunction } from 'express'
 import { AppError } from '../../core/errors/AppError'
+import { DocumentModel } from '../documents/document.model'
 
 // @route   POST /api/ai/chat
 // @desc    Mock endpoint for the Contextual AI Sidebar (Chat / Summarize)
-export const askAI = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
+export const askAI = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   try {
     const { documentId, message } = req.body
 
@@ -16,10 +13,8 @@ export const askAI = async (
     }
 
     // 🚀 SENIOR MOVE: Simulate a 1.5-second AI thinking delay!
-    // This forces the frontend team to build Loading Spinners in their React UI.
     await new Promise((resolve) => setTimeout(resolve, 1500))
 
-    // Hardcoded Mock Response
     res.status(200).json({
       success: true,
       data: {
@@ -50,10 +45,8 @@ export const compareDocuments = async (
       return next(new AppError('Please provide both doc1Id and doc2Id', 400))
     }
 
-    // Simulate a 2.5-second heavy AI comparison delay
     await new Promise((resolve) => setTimeout(resolve, 2500))
 
-    // Hardcoded Comparison Response
     res.status(200).json({
       success: true,
       data: {
@@ -67,6 +60,70 @@ export const compareDocuments = async (
         ],
         uniqueDoc1: ['Mentions Mongoose schemas', 'Discusses JWT limits'],
         uniqueDoc2: ['Mentions Tailwind CSS', 'Discusses Redux state']
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// NEW: @route   POST /api/ai/organize-folder
+// NEW: @desc    Takes newly uploaded files, checks existing user folders, and mocks an AI routing response.
+export const generateSemanticStructure = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id
+    // The frontend will send the list of newly uploaded documents we just saved
+    const { documents } = req.body
+
+    if (!documents || !Array.isArray(documents) || documents.length === 0) {
+      return next(new AppError('Please provide an array of documents to organize.', 400))
+    }
+
+    // 1. Get the user's EXISTING folders from the database
+    // We filter out the default '/' so the AI knows actual categories
+    const existingPaths = await DocumentModel.distinct('semanticPath', {
+      user: userId,
+      semanticPath: { $ne: '/' }
+    })
+
+    // 2. Simulate AI processing time
+    await new Promise((resolve) => setTimeout(resolve, 3000))
+
+    // 3. Mock the LLM Router Logic
+    // In production, you would send `existingPaths` and `documents` to OpenAI here.
+    // The prompt would be: "Route these files into these existingPaths. If they don't fit, invent a new path."
+
+    const proposedUpdates = documents.map((doc: any) => {
+      let newPath = 'Miscellaneous' // Fallback
+      const titleLower = doc.title.toLowerCase()
+
+      // Extremely basic mock routing logic just to test the UI
+      if (titleLower.includes('invoice') || titleLower.includes('tax')) {
+        newPath = existingPaths.includes('Finance/Invoices')
+          ? 'Finance/Invoices'
+          : 'Personal/Finance'
+      } else if (titleLower.includes('contract') || titleLower.includes('nda')) {
+        newPath = 'Work/Legal'
+      } else if (titleLower.includes('png') || titleLower.includes('jpg')) {
+        newPath = 'Media/Images'
+      }
+
+      return {
+        documentId: doc._id || doc.id,
+        newPath: newPath
+      }
+    })
+
+    // 4. Return the strict JSON format that our `bulkUpdate` endpoint will eventually need!
+    res.status(200).json({
+      success: true,
+      message: 'AI successfully mapped documents to semantic folders.',
+      data: {
+        updates: proposedUpdates
       }
     })
   } catch (error) {
