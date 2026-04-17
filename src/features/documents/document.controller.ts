@@ -36,12 +36,17 @@ export const getAllDocuments = async (
       query.cognitiveLoad = req.query.cognitiveLoad
     }
 
-    // AI Semantic Folder Filter
+    // --- UPGRADED: AI Semantic Folder Filter (Now supports drill-down!) ---
     if (req.query.semanticPath) {
-      query.semanticPath = req.query.semanticPath
+      const folderName = (req.query.semanticPath as string).replace(/^\/+|\/+$/g, '')
+      const escapedFolder = folderName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      query.semanticPath = {
+        $regex: `^/?${escapedFolder}(/|$)`,
+        $options: 'i'
+      }
     }
 
-    // --- NEW: Physical Client Folder Filter (The TRUE VS Code Style) ---
+    // --- UPGRADED: Physical Client Folder Filter ---
     if (req.query.originalClientPath) {
       // 1. Clean the string: Remove any accidental leading or trailing slashes from the frontend
       const folderName = (req.query.originalClientPath as string).replace(/^\/+|\/+$/g, '')
@@ -49,10 +54,11 @@ export const getAllDocuments = async (
       // 2. Escape any weird characters in the folder name
       const escapedFolder = folderName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-      // 3. THE FIX: ^/? means "Start with an OPTIONAL slash".
-      // Then match the folder, a slash, and ONLY a filename (no more slashes allowed)
+      // 3. THE FIX: Loosen the Regex!
+      // It must start with the folder name, followed by a slash OR the end of the string.
+      // This grabs ALL nested documents so the frontend can build the sub-folder UI.
       query.originalClientPath = {
-        $regex: `^/?${escapedFolder}/[^/]+$`,
+        $regex: `^/?${escapedFolder}(/|$)`,
         $options: 'i'
       }
     }
@@ -80,7 +86,6 @@ export const getAllDocuments = async (
     next(error)
   }
 }
-
 // @route   PUT /api/documents/:id
 // @access  Private
 export const updateDocument = async (
