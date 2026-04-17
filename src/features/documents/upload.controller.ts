@@ -52,10 +52,11 @@ export const uploadData = async (
     }
 
     // Parse the relative paths sent from the frontend dropzone
-    // Example: ["Work/Invoices/invoice1.pdf", "Work/Invoices/invoice2.pdf"]
     let parsedPaths: string[] = []
     if (clientPaths) {
-      parsedPaths = typeof clientPaths === 'string' ? JSON.parse(clientPaths) : clientPaths
+      // If only one file is uploaded, FormData makes it a string. If multiple, it's an array.
+      // We just ensure it's always an array of strings.
+      parsedPaths = Array.isArray(clientPaths) ? clientPaths : [clientPaths]
     }
 
     // 2. Loop through the array of files and prepare them for the database
