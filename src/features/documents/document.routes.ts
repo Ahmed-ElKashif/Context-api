@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { requireAuth } from '../../core/middlewares/auth.middleware'
+import { protect } from '../../core/middlewares/auth.middleware' 
 import { upload } from '../../core/middlewares/upload.middleware'
 import { uploadData } from './upload.controller'
 import {
@@ -7,15 +7,15 @@ import {
   updateDocument,
   deleteDocument,
   bulkUpdateSemanticPaths,
-  deleteFolder, // NEW
-  renameFolder, // NEW
-  bulkDeleteDocuments //New
+  deleteFolder, // Note: You might move these to your new folder controller later!
+  renameFolder, 
+  bulkDeleteDocuments
 } from './document.controller'
 
 const router = Router()
 
 // Protect all document routes so only logged-in users can access them
-router.use(requireAuth)
+router.use(protect) // 🛠️ THE FIX: Updated name
 
 // Route: POST /api/documents/upload
 // Upgraded to handle batch uploads! Expects an array of files under the key 'files' (max 10)
@@ -32,7 +32,7 @@ router.put('/bulk/semantic-paths', bulkUpdateSemanticPaths)
 
 // --- NEW: FOLDER BULK ACTIONS ---
 // IMPORTANT: These must come BEFORE the /:id routes so Express doesn't think "folder" is an ID!
-router.delete('/bulk', bulkDeleteDocuments) // <-- NEW ROUTE
+router.delete('/bulk', bulkDeleteDocuments) 
 router.delete('/folder', deleteFolder)
 router.put('/folder/rename', renameFolder)
 

@@ -15,14 +15,15 @@ export interface IDocument extends Document {
   cognitiveLoad: CognitiveLoad
   summary?: string
   tags: string[]
-  extractedText?: string // The raw text for the Semantic Search later
+  extractedText?: string 
 
   // Storage & Organization
-  originalFilePath?: string // Where the actual PDF/Image lives (AWS S3 or Local)
+  originalFilePath?: string 
 
-  // --- NEW: AI Semantic Organizer Fields (Materialized Paths) ---
-  originalClientPath?: string // BEFORE: The messy path from their local machine (e.g., "Downloads/invoice.pdf")
-  semanticPath?: string // AFTER: The clean AI-generated path or existing taxonomy path (e.g., "Work/Invoices/invoice.pdf")
+  // --- 🛠️ UPGRADED: Relational Folder Architecture ---
+  folder: mongoose.Types.ObjectId | null // Where it ACTUALLY lives right now (null = Root)
+  originalClientPath?: string // We keep this temporarily just to remember the drag-and-drop structure
+  semanticPath?: string // The AI's "Proposal" string. Not a real folder until accepted!
 
   createdAt: Date
   updatedAt: Date
@@ -50,14 +51,21 @@ const documentSchema = new Schema<IDocument>(
     summary: { type: String },
     tags: { type: [String], default: [] },
     extractedText: { type: String },
+    originalFilePath: { type: String }, 
 
-    originalFilePath: { type: String }, // Not required for TextSnippets!
-
-    // Semantic Paths for the "Before & After" Feature
+    // --- Relational & Semantic Paths ---
+    folder: { 
+      type: Schema.Types.ObjectId, 
+      ref: 'Folder', 
+      default: null // Null means it sits on the main dashboard
+    },
     originalClientPath: { type: String, default: '/' },
     semanticPath: { type: String, default: '/' }
   },
   { timestamps: true }
 )
+
+// Performance indexing so loading a specific folder is instant
+documentSchema.index({ user: 1, folder: 1 });
 
 export const DocumentModel = mongoose.model<IDocument>('Document', documentSchema)
