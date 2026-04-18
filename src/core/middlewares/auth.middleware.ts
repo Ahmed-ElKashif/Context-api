@@ -8,7 +8,8 @@ interface JwtPayload {
   id: string;
 }
 
-export const requireAuth = async (
+// 🛠️ UPGRADE: Renamed from requireAuth to protect to match our routes!
+export const protect = async (
   req: Request,
   res: Response,
   next: NextFunction
@@ -31,11 +32,9 @@ export const requireAuth = async (
     }
 
     // 3. Verify the token (Is it real? Has it expired?)
-    // We use 'as string' here because we guarantee JWT_SECRET exists in our .env
     const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as JwtPayload;
 
     // 4. Check if the user belonging to this token still exists in the database
-    // (e.g., What if they were deleted yesterday, but their token hasn't expired yet?)
     const currentUser = await User.findById(decoded.id);
     if (!currentUser) {
       return next(new AppError('The user belonging to this token no longer exists.', 401));
@@ -43,7 +42,8 @@ export const requireAuth = async (
 
     // 5. SUCCESS! Attach the user object to the request.
     // Now, any controller that runs AFTER this middleware can access req.user!
-    req.user = currentUser;
+    // (Note: This assumes you have defined req.user in your src/core/types/express.d.ts file)
+    (req as any).user = currentUser; 
     next();
     
   } catch (error) {

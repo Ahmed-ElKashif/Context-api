@@ -5,11 +5,15 @@ import morgan from 'morgan'
 import { AppError } from './core/errors/AppError'
 import { globalErrorHandler } from './core/middlewares/error.middleware'
 import path from 'path'
+
+// Route Imports
 import authRoutes from './features/auth/auth.routes'
 import userRoutes from './features/users/user.routes'
-const app: Application = express()
 import documentRoutes from './features/documents/document.routes'
 import aiRoutes from './features/ai/ai.routes'
+import folderRoutes from './features/folders/folder.routes' // 🛠️ NEW: Imported Folder Routes
+
+const app: Application = express()
 
 // Global Middlewares
 app.use(helmet()) // Security headers
@@ -25,13 +29,13 @@ app.get('/api/health', (req: Request, res: Response) => {
   res.status(200).json({ success: true, message: 'Context API is running smoothly.' })
 })
 
+// Feature Routes
 app.use('/api/auth', authRoutes)
-
 app.use('/api/users', userRoutes)
-
 app.use('/api/documents', documentRoutes)
-
 app.use('/api/ai', aiRoutes)
+app.use('/api/folders', folderRoutes) // 🛠️ NEW: Mounted Folder Routes
+
 // 404 Handler for undefined routes
 app.use((req: Request, res: Response, next: NextFunction) => {
   next(new AppError(`Route ${req.originalUrl} not found`, 404))

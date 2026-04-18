@@ -1,17 +1,25 @@
 import { Router } from 'express'
-import { requireAuth } from '../../core/middlewares/auth.middleware'
-import { askAI, compareDocuments, generateSemanticStructure } from './ai.controller'
+import { protect } from '../../core/middlewares/auth.middleware' 
+import { 
+  askAI, 
+  compareDocuments, 
+  generateSemanticStructure,
+  applySemanticFolders // 🛠️ NEW: Import our final boss controller!
+} from './ai.controller'
 
 const router = Router()
 
 // Protect AI routes
-router.use(requireAuth)
+router.use(protect) // 🛠️ THE FIX: Updated name
 
 // Endpoints
 router.post('/chat', askAI)
 router.post('/compare', compareDocuments)
 
-// NEW: Endpoint for the Before & After Smart Folder Feature
+// Endpoint for the Before & After Smart Folder Feature (Generates the Proposal)
 router.post('/organize-folder', generateSemanticStructure)
+
+// 🛠️ NEW: Endpoint to physically create the folders in MongoDB and apply them!
+router.put('/apply-folders', applySemanticFolders)
 
 export default router

@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import { AppError } from '../../core/errors/AppError'
 import { DocumentModel } from '../documents/document.model'
-
+import Folder, { IFolder } from '../folders/folder.model';  
 // @route   POST /api/ai/chat
 // @desc    Mock endpoint for the Contextual AI Sidebar (Chat / Summarize)
 export const askAI = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -67,48 +67,40 @@ export const compareDocuments = async (
   }
 }
 
-// NEW: @route   POST /api/ai/organize-folder
-// NEW: @desc    Takes newly uploaded files, checks existing user folders, and mocks an AI routing response.
+// @route   POST /api/ai/organize-folder
+// @desc    Takes newly uploaded files, checks existing user folders, and mocks an AI routing response.
 export const generateSemanticStructure = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const userId = req.user?._id
-    // The frontend will send the list of newly uploaded documents we just saved
+    const userId = (req as any).user._id
     const { documents } = req.body
 
     if (!documents || !Array.isArray(documents) || documents.length === 0) {
       return next(new AppError('Please provide an array of documents to organize.', 400))
     }
 
-    // 1. Get the user's EXISTING folders from the database
-    // We filter out the default '/' so the AI knows actual categories
-    const existingPaths = await DocumentModel.distinct('semanticPath', {
+    // 1. Get the user's EXISTING folders from the Folder database now!
+    const existingPaths = await Folder.distinct('path', {
       user: userId,
-      semanticPath: { $ne: '/' }
     })
 
     // 2. Simulate AI processing time
     await new Promise((resolve) => setTimeout(resolve, 3000))
 
-    // 3. Mock the LLM Router Logic
-    // In production, you would send `existingPaths` and `documents` to OpenAI here.
-    // The prompt would be: "Route these files into these existingPaths. If they don't fit, invent a new path."
-
     const proposedUpdates = documents.map((doc: any) => {
       let newPath = 'Miscellaneous' // Fallback
       const titleLower = doc.title.toLowerCase()
 
-      // Extremely basic mock routing logic just to test the UI
       if (titleLower.includes('invoice') || titleLower.includes('tax')) {
         newPath = existingPaths.includes('Finance/Invoices')
           ? 'Finance/Invoices'
           : 'Personal/Finance'
       } else if (titleLower.includes('contract') || titleLower.includes('nda')) {
         newPath = 'Work/Legal'
-      } else if (titleLower.includes('png') || titleLower.includes('jpg')) {
+      } else if (titleLower.includes('png') || titleLower.includes('jpg') || titleLower.includes('image')) {
         newPath = 'Media/Images'
       }
 
@@ -118,7 +110,6 @@ export const generateSemanticStructure = async (
       }
     })
 
-    // 4. Return the strict JSON format that our `bulkUpdate` endpoint will eventually need!
     res.status(200).json({
       success: true,
       message: 'AI successfully mapped documents to semantic folders.',
@@ -128,5 +119,77 @@ export const generateSemanticStructure = async (
     })
   } catch (error) {
     next(error)
+  }
+}
+
+// 🛠️ THE FINAL BOSS: Recursively creates physical folders based on AI string paths!
+// @route   PUT /api/ai/apply-folders
+// @desc    Takes proposed paths, generates Folder models, and links them to Documents
+export const applySemanticFolders = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = (req as any).user._id;
+    const { updates } = req.body; // Array of { documentId, newPath }
+
+    if (!updates || !Array.isArray(updates)) {
+      return next(new AppError('Invalid updates array provided.', 400));
+    }
+
+    // Loop through each document the AI wants to move
+    for (const update of updates) {
+      const { documentId, newPath } = update;
+      
+      if (!documentId || !newPath) continue;
+
+      // Split "Finance/Invoices/2026" into ["Finance", "Invoices", "2026"]
+      const pathParts = newPath.split('/').filter((p: string) => p.trim() !== '');
+      
+      let currentParentId = null; // Start at the root level
+      let accumulatedPath = "";
+
+      // Sequentially crawl down the path, creating folders if they don't exist
+      for (const part of pathParts) {
+        accumulatedPath = accumulatedPath ? `${accumulatedPath}/${part}` : part;
+
+        // Does this folder exist at this exact level?
+       // 🛠️ THE FIX: Strongly typed as IFolder | null
+        let folder: IFolder | null = await Folder.findOne({
+          name: part,
+          user: userId,
+          parentFolder: currentParentId
+       
+        });
+
+        // If not, physically create it in MongoDB!
+        if (!folder) {
+          folder = await Folder.create({
+            name: part,
+            user: userId,
+            parentFolder: currentParentId,
+            path: accumulatedPath
+          });
+        }
+
+        // Move down one level for the next loop iteration
+        currentParentId = folder._id;
+      }
+
+      // 'currentParentId' is now the ID of the deepest folder in the path (e.g. "2026")
+      // Attach the Document to this real Folder!
+      await DocumentModel.findByIdAndUpdate(documentId, {
+        folder: currentParentId,
+        semanticPath: newPath // Keep the string for easy reading
+      });
+    }
+
+    res.status(200).json({ 
+      success: true, 
+      message: 'Physical folder structure generated and documents routed successfully!' 
+    });
+  } catch (error) {
+    next(error);
   }
 }
