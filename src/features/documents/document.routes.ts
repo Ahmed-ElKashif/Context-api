@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { protect } from '../../core/middlewares/auth.middleware' 
+import { protect } from '../../core/middlewares/auth.middleware'
 import { upload } from '../../core/middlewares/upload.middleware'
 import { uploadData } from './upload.controller'
 import {
@@ -7,8 +7,6 @@ import {
   updateDocument,
   deleteDocument,
   bulkUpdateSemanticPaths,
-  deleteFolder, // Note: You might move these to your new folder controller later!
-  renameFolder, 
   bulkDeleteDocuments
 } from './document.controller'
 
@@ -32,9 +30,7 @@ router.put('/bulk/semantic-paths', bulkUpdateSemanticPaths)
 
 // --- NEW: FOLDER BULK ACTIONS ---
 // IMPORTANT: These must come BEFORE the /:id routes so Express doesn't think "folder" is an ID!
-router.delete('/bulk', bulkDeleteDocuments) 
-router.delete('/folder', deleteFolder)
-router.put('/folder/rename', renameFolder)
+router.delete('/bulk', bulkDeleteDocuments)
 
 // Route: PUT /api/documents/:id
 // Route: DELETE /api/documents/:id
