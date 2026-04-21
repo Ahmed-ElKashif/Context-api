@@ -1,7 +1,8 @@
 import { Request, Response, NextFunction } from 'express'
 import { AppError } from '../../core/errors/AppError'
 import { DocumentModel } from '../documents/document.model'
-import Folder, { IFolder } from '../folders/folder.model';  
+import Folder, { IFolder } from '../folders/folder.model'
+import { ChatMessageModel } from './chat.model' // 🛠️ NEW IMPORT
 // @route   POST /api/ai/chat
 // @desc    Mock endpoint for the Contextual AI Sidebar (Chat / Summarize)
 export const askAI = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -84,7 +85,7 @@ export const generateSemanticStructure = async (
 
     // 1. Get the user's EXISTING folders from the Folder database now!
     const existingPaths = await Folder.distinct('path', {
-      user: userId,
+      user: userId
     })
 
     // 2. Simulate AI processing time
@@ -100,7 +101,11 @@ export const generateSemanticStructure = async (
           : 'Personal/Finance'
       } else if (titleLower.includes('contract') || titleLower.includes('nda')) {
         newPath = 'Work/Legal'
-      } else if (titleLower.includes('png') || titleLower.includes('jpg') || titleLower.includes('image')) {
+      } else if (
+        titleLower.includes('png') ||
+        titleLower.includes('jpg') ||
+        titleLower.includes('image')
+      ) {
         newPath = 'Media/Images'
       }
 
@@ -131,37 +136,36 @@ export const applySemanticFolders = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const userId = (req as any).user._id;
-    const { updates } = req.body; // Array of { documentId, newPath }
+    const userId = (req as any).user._id
+    const { updates } = req.body // Array of { documentId, newPath }
 
     if (!updates || !Array.isArray(updates)) {
-      return next(new AppError('Invalid updates array provided.', 400));
+      return next(new AppError('Invalid updates array provided.', 400))
     }
 
     // Loop through each document the AI wants to move
     for (const update of updates) {
-      const { documentId, newPath } = update;
-      
-      if (!documentId || !newPath) continue;
+      const { documentId, newPath } = update
+
+      if (!documentId || !newPath) continue
 
       // Split "Finance/Invoices/2026" into ["Finance", "Invoices", "2026"]
-      const pathParts = newPath.split('/').filter((p: string) => p.trim() !== '');
-      
-      let currentParentId = null; // Start at the root level
-      let accumulatedPath = "";
+      const pathParts = newPath.split('/').filter((p: string) => p.trim() !== '')
+
+      let currentParentId = null // Start at the root level
+      let accumulatedPath = ''
 
       // Sequentially crawl down the path, creating folders if they don't exist
       for (const part of pathParts) {
-        accumulatedPath = accumulatedPath ? `${accumulatedPath}/${part}` : part;
+        accumulatedPath = accumulatedPath ? `${accumulatedPath}/${part}` : part
 
         // Does this folder exist at this exact level?
-       // 🛠️ THE FIX: Strongly typed as IFolder | null
+        // 🛠️ THE FIX: Strongly typed as IFolder | null
         let folder: IFolder | null = await Folder.findOne({
           name: part,
           user: userId,
           parentFolder: currentParentId
-       
-        });
+        })
 
         // If not, physically create it in MongoDB!
         if (!folder) {
@@ -170,11 +174,11 @@ export const applySemanticFolders = async (
             user: userId,
             parentFolder: currentParentId,
             path: accumulatedPath
-          });
+          })
         }
 
         // Move down one level for the next loop iteration
-        currentParentId = folder._id;
+        currentParentId = folder._id
       }
 
       // 'currentParentId' is now the ID of the deepest folder in the path (e.g. "2026")
@@ -182,14 +186,45 @@ export const applySemanticFolders = async (
       await DocumentModel.findByIdAndUpdate(documentId, {
         folder: currentParentId,
         semanticPath: newPath // Keep the string for easy reading
-      });
+      })
     }
 
-    res.status(200).json({ 
-      success: true, 
-      message: 'Physical folder structure generated and documents routed successfully!' 
-    });
+    res.status(200).json({
+      success: true,
+      message: 'Physical folder structure generated and documents routed successfully!'
+    })
   } catch (error) {
-    next(error);
+    next(error)
+  }
+}
+
+// @route   GET /api/ai/chat/:documentId
+// @desc    Fetches the chat history scoped specifically to one document
+export const getDocumentChatHistory = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { documentId } = req.params
+    const userId = (req as any).user._id
+
+    // 1. Verify the user actually owns the document
+    const document = await DocumentModel.findOne({ _id: documentId, user: userId })
+    if (!document) {
+      return next(new AppError('Document not found or access denied', 404))
+    }
+
+    // 2. Fetch the chat history, sorted from oldest to newest
+    const history = await ChatMessageModel.find({ documentId, user: userId })
+      .sort({ createdAt: 1 })
+      .select('role content createdAt -_id') // Only send what the UI needs
+
+    res.status(200).json({
+      success: true,
+      data: history
+    })
+  } catch (error) {
+    next(error)
   }
 }

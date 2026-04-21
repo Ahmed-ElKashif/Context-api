@@ -15,10 +15,10 @@ export interface IDocument extends Document {
   cognitiveLoad: CognitiveLoad
   summary?: string
   tags: string[]
-  extractedText?: string 
+  extractedText?: string
 
   // Storage & Organization
-  originalFilePath?: string 
+  originalFilePath?: string
 
   // --- 🛠️ UPGRADED: Relational Folder Architecture ---
   folder: mongoose.Types.ObjectId | null // Where it ACTUALLY lives right now (null = Root)
@@ -51,12 +51,12 @@ const documentSchema = new Schema<IDocument>(
     summary: { type: String },
     tags: { type: [String], default: [] },
     extractedText: { type: String },
-    originalFilePath: { type: String }, 
+    originalFilePath: { type: String },
 
     // --- Relational & Semantic Paths ---
-    folder: { 
-      type: Schema.Types.ObjectId, 
-      ref: 'Folder', 
+    folder: {
+      type: Schema.Types.ObjectId,
+      ref: 'Folder',
       default: null // Null means it sits on the main dashboard
     },
     originalClientPath: { type: String, default: '/' },
@@ -66,6 +66,25 @@ const documentSchema = new Schema<IDocument>(
 )
 
 // Performance indexing so loading a specific folder is instant
-documentSchema.index({ user: 1, folder: 1 });
+documentSchema.index({ user: 1, folder: 1 })
+
+// 2. 🛠️ NEW: Robust Text Index for Semantic/Keyword Search
+documentSchema.index(
+  {
+    title: 'text',
+    tags: 'text',
+    summary: 'text',
+    extractedText: 'text'
+  },
+  {
+    weights: {
+      title: 10, // Highest priority: Filenames
+      tags: 5, // High priority: AI-assigned tags
+      summary: 2, // Medium priority: AI Summary
+      extractedText: 1 // Lowest priority: The deep raw text
+    },
+    name: 'DocumentTextIndex'
+  }
+)
 
 export const DocumentModel = mongoose.model<IDocument>('Document', documentSchema)

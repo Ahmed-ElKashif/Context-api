@@ -86,6 +86,64 @@ export const getAllDocuments = async (
     next(error)
   }
 }
+
+// @route   GET /api/documents/search
+// @access  Private
+// Description: Robust semantic/keyword search using MongoDB Text Indexes and Regex fallback
+export const searchDocuments = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id
+    const { q, page = 1, limit = 10 } = req.query
+
+    if (!q || typeof q !== 'string') {
+      return next(new AppError('Search query (q) is required.', 400))
+    }
+
+    const skip = (Number(page) - 1) * Number(limit)
+
+    // 🛠️ The Robust Search Query
+    // Looks for an exact text match (leveraging the weights we set in the model)
+    // OR a partial regex match in the title or tags for flexibility
+    const searchQuery = {
+      user: userId,
+      $or: [
+        { $text: { $search: q } },
+        { title: { $regex: q, $options: 'i' } },
+        { tags: { $regex: q, $options: 'i' } }
+      ]
+    }
+
+    // Find the documents and sort them by MongoDB's internal relevance score
+    // If it's a regex match (no text score), it falls back to newest-first
+    const documents = await DocumentModel.find(searchQuery, {
+      score: { $meta: 'textScore' }
+    })
+      .sort({ score: { $meta: 'textScore' }, updatedAt: -1 })
+      .skip(skip)
+      .limit(Number(limit))
+      .select('-extractedText -__v') // Keep payloads small
+
+    const totalMatches = await DocumentModel.countDocuments(searchQuery)
+
+    res.status(200).json({
+      success: true,
+      pagination: {
+        currentPage: Number(page),
+        totalPages: Math.ceil(totalMatches / Number(limit)),
+        totalItems: totalMatches,
+        limit: Number(limit)
+      },
+      data: documents
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
 // @route   PUT /api/documents/:id
 // @access  Private
 export const updateDocument = async (
@@ -223,6 +281,62 @@ export const bulkDeleteDocuments = async (
       success: true,
       message: `Successfully deleted ${result.deletedCount} documents.`
     })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// @route   GET /api/documents/:id
+// @access  Private
+// Description: Fetches the FULL document object, including the heavy extractedText
+export const getDocumentById = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params
+
+    const document = await DocumentModel.findOne({ _id: id, user: req.user?._id }).populate(
+      'folder',
+      'name'
+    ) // Optionally pull in the folder name
+
+    if (!document) {
+      return next(new AppError('Document not found or unauthorized', 404))
+    }
+
+    res.status(200).json({ success: true, data: document })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// @route   GET /api/documents/:id/file
+// @access  Private
+// Description: Streams the actual physical file (PDF, Image) to the frontend viewer
+export const serveDocumentFile = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { id } = req.params
+
+    const document = await DocumentModel.findOne({ _id: id, user: req.user?._id })
+
+    if (!document || !document.originalFilePath) {
+      return next(new AppError('File not found on server', 404))
+    }
+
+    const filePath = path.join(process.cwd(), document.originalFilePath)
+
+    if (!fs.existsSync(filePath)) {
+      return next(new AppError('Physical file is missing from the server directory', 404))
+    }
+
+    // Send the file stream to the frontend
+    res.sendFile(filePath)
   } catch (error) {
     next(error)
   }
