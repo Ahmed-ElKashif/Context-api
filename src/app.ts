@@ -12,6 +12,7 @@ import userRoutes from './features/users/user.routes'
 import documentRoutes from './features/documents/document.routes'
 import aiRoutes from './features/ai/ai.routes'
 import folderRoutes from './features/folders/folder.routes' // 🛠️ NEW: Imported Folder Routes
+import comparisonRoutes from './features/comparison/comparison.routes' // 🛠️ Import it
 
 const app: Application = express()
 
@@ -35,6 +36,7 @@ app.use('/api/users', userRoutes)
 app.use('/api/documents', documentRoutes)
 app.use('/api/ai', aiRoutes)
 app.use('/api/folders', folderRoutes) // 🛠️ NEW: Mounted Folder Routes
+app.use('/api/comparison', comparisonRoutes) // 🛠️ Mount it here!
 
 // 404 Handler for undefined routes
 app.use((req: Request, res: Response, next: NextFunction) => {
