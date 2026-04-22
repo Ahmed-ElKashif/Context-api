@@ -1,231 +1,147 @@
 import { Request, Response, NextFunction } from 'express'
-import fs from 'fs'
-import path from 'path'
-import Folder from './folder.model'
-import { DocumentModel } from '../documents/document.model'
-import mongoose from 'mongoose'
+import { FolderService } from './folder.service'
+import { AppError } from '../../core/errors/AppError'
 
-// Helper to standard responses (Assuming you have an AppError class, if not, standard throw works)
-export const createFolder = async (req: Request, res: Response, next: NextFunction) => {
+export const createFolder = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   try {
+    const userId = req.user?._id?.toString() || (req as any).user?.id
+    if (!userId) return next(new AppError('Unauthorized', 401))
+
     const { name, parentFolder } = req.body
-    const userId = (req as any).user.id // Assuming auth.middleware attaches user
 
-    // 1. Check if a folder with this name already exists in this specific location
-    const existingFolder = await Folder.findOne({
-      name,
-      user: userId,
-      parentFolder: parentFolder || null
-    })
+    const result = await FolderService.createFolder(userId, name, parentFolder)
 
-    if (existingFolder) {
-      return res.status(400).json({ error: 'A folder with this name already exists here.' })
+    if (result.error) {
+      res.status(400).json({ success: false, error: result.error })
+      return
     }
 
-    // 2. Build the breadcrumb path string
-    let newPath = name
-    if (parentFolder) {
-      const parent = await Folder.findById(parentFolder)
-      if (!parent) {
-        return res.status(404).json({ error: 'Parent folder not found.' })
-      }
-      newPath = `${parent.path}/${name}`
-    }
-
-    // 3. Create the folder
-    const folder = await Folder.create({
-      name,
-      user: userId,
-      parentFolder: parentFolder || null,
-      path: newPath
-    })
-
-    res.status(201).json({ success: true, data: folder })
+    res.status(201).json({ success: true, data: result.folder })
   } catch (error) {
     next(error)
   }
 }
 
-export const getFolderContents = async (req: Request, res: Response, next: NextFunction) => {
+export const getFolderContents = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   try {
-    const userId = (req as any).user.id
-    const { folderId } = req.params
+    const userId = req.user?._id?.toString() || (req as any).user?.id
+    if (!userId) return next(new AppError('Unauthorized', 401))
+
+    // 🛠️ THE FIX: Explicitly cast to string so TypeScript knows it won't be undefined
+    const folderId = req.params.folderId as string
 
     const isRoot = !folderId || folderId === 'root'
-    const targetFolderId = isRoot ? null : new mongoose.Types.ObjectId(folderId as string)
+    const targetFolderId = isRoot ? null : folderId // This is now perfectly typed as string | null
 
     const page = parseInt(req.query.page as string, 10) || 1
     const limit = parseInt(req.query.limit as string, 10) || 10
     const skip = (page - 1) * limit
 
-    const folders = await Folder.find({
-      user: userId,
-      parentFolder: targetFolderId
-    }).sort({ name: 1 })
-
-    const documents = await DocumentModel.find({
-      user: userId,
-      folder: targetFolderId
-    })
-      .sort({ updatedAt: -1 })
-      .skip(skip)
-      .limit(limit)
-
-    const totalDocuments = await DocumentModel.countDocuments({
-      user: userId,
-      folder: targetFolderId
-    })
-
-    let currentFolder = null
-    let breadcrumbs: mongoose.Document[] = [] // 🛠️ NEW: Array of Parent Folders for the UI Header!
-
-    if (!isRoot) {
-      currentFolder = await Folder.findById(targetFolderId)
-
-      if (currentFolder) {
-        // Build the ancestor string paths (e.g., ["mock", "mock/My Files"])
-        const pathParts = currentFolder.path.split('/')
-        const ancestorPaths = []
-        let cumulativePath = ''
-
-        // Loop up to the second-to-last item (we don't need the current folder in the breadcrumb ancestors)
-        for (let i = 0; i < pathParts.length - 1; i++) {
-          cumulativePath = cumulativePath ? `${cumulativePath}/${pathParts[i]}` : pathParts[i]
-          ancestorPaths.push(cumulativePath)
-        }
-
-        // Fetch all parent folders in one quick database trip
-        if (ancestorPaths.length > 0) {
-          const ancestors = await Folder.find({
-            user: userId,
-            path: { $in: ancestorPaths }
-          })
-
-          // Sort them by path length so they are in the correct top-down order
-          breadcrumbs = ancestors.sort((a, b) => a.path.length - b.path.length)
-        }
-      }
-    }
+    const data = await FolderService.getContents(userId, targetFolderId, skip, limit)
 
     res.status(200).json({
       success: true,
       pagination: {
         currentPage: page,
-        totalPages: Math.ceil(totalDocuments / limit),
-        totalItems: totalDocuments,
+        totalPages: Math.ceil(data.totalDocuments / limit),
+        totalItems: data.totalDocuments,
         limit
       },
-      data: {
-        currentFolder,
-        breadcrumbs, // 🛠️ NEW: Added to the response payload!
-        folders,
-        documents
-      }
+      data
     })
   } catch (error) {
     next(error)
   }
 }
 
-export const renameFolder = async (req: Request, res: Response, next: NextFunction) => {
+export const renameFolder = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   try {
-    const { id } = req.params
-    const { newName } = req.body
-    const userId = (req as any).user.id
+    const userId = req.user?._id?.toString() || (req as any).user?.id
+    if (!userId) return next(new AppError('Unauthorized', 401))
 
-    const folder = await Folder.findOne({ _id: id, user: userId })
-    if (!folder) {
-      return res.status(404).json({ error: 'Folder not found.' })
+    // 🛠️ THE FIX: Explicitly cast 'id' as a string so the Service is happy
+    const id = req.params.id as string
+    const newName = req.body.newName
+
+    if (!id) {
+      return next(new AppError('Folder ID is required', 400))
     }
 
-    // Check for naming collisions in the same parent directory
-    const collision = await Folder.findOne({
-      name: newName,
-      parentFolder: folder.parentFolder,
-      user: userId
-    })
+    const result = await FolderService.renameFolder(userId, id, newName)
 
-    if (collision) {
-      return res.status(400).json({ error: 'Name already in use in this destination.' })
+    if (result.error) {
+      // Return 404 for not found, 400 for collisions
+      const status = result.error === 'Folder not found.' ? 404 : 400
+      res.status(status).json({ success: false, error: result.error })
+      return
     }
 
-    // Update name and regenerate the path string
-    const oldName = folder.name
-    folder.name = newName
-    folder.path = folder.path.replace(new RegExp(`${oldName}$`), newName)
-
-    await folder.save()
-
-    // Note: In a massive enterprise app, renaming a parent folder would require a background
-    // worker to update the `path` string of all deeply nested child folders. For MVP, this is fine!
-
-    res.status(200).json({ success: true, data: folder })
+    res.status(200).json({ success: true, data: result.folder })
   } catch (error) {
     next(error)
   }
 }
 
-export const deleteFolder = async (req: Request, res: Response, next: NextFunction) => {
+export const deleteFolder = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   try {
-    const { id } = req.params
-    const userId = (req as any).user.id
+    const userId = req.user?._id?.toString() || (req as any).user?.id
+    if (!userId) return next(new AppError('Unauthorized', 401))
 
-    const targetFolder = await Folder.findOne({ _id: id, user: userId })
-    if (!targetFolder) {
-      return res.status(404).json({ error: 'Folder not found.' })
+    // 🛠️ THE FIX: Explicitly cast 'id' as a string
+    const id = req.params.id as string
+
+    if (!id) {
+      return next(new AppError('Folder ID is required', 400))
     }
 
-    // 1. Find the folder AND all sub-folders nested inside it
-    // Escaping regex chars just in case the folder name has a weird symbol
-    const escapedPath = targetFolder.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const folderQuery = {
-      user: userId,
-      path: { $regex: `^${escapedPath}(/|$)` }
+    const result = await FolderService.deleteFolderWithContents(userId, id)
+
+    if (result.error) {
+      res.status(404).json({ success: false, error: result.error })
+      return
     }
 
-    const foldersToDelete = await Folder.find(folderQuery)
-    const folderIdsToDelete = foldersToDelete.map((f) => f._id)
-
-    // 2. Find all documents that live inside ANY of these folders
-    const documentsToDelete = await DocumentModel.find({
-      user: userId,
-      folder: { $in: folderIdsToDelete }
-    })
-
-    // 3. Clean up the physical hard drive (Wipe the actual files)
-    for (const doc of documentsToDelete) {
-      if (doc.originalFilePath) {
-        const filePath = path.join(process.cwd(), doc.originalFilePath)
-        if (fs.existsSync(filePath)) {
-          fs.unlinkSync(filePath)
-        }
-      }
-    }
-
-    // 4. Wipe them from the database in two clean, massive sweeps!
-    await DocumentModel.deleteMany({ user: userId, folder: { $in: folderIdsToDelete } })
-    await Folder.deleteMany({ user: userId, _id: { $in: folderIdsToDelete } })
+    // 🛠️ THE FIX: Safely fallback to 1 (so 1 - 1 = 0 subfolders) and 0 if TS gets confused
+    const foldersNuked = result.foldersDeleted ?? 1
+    const filesNuked = result.documentsDeleted ?? 0
 
     res.status(200).json({
       success: true,
-      message: `Nuked! Deleted folder, ${foldersToDelete.length - 1} sub-folders, and ${documentsToDelete.length} files.`
+      message: `Nuked! Deleted folder, ${foldersNuked - 1} sub-folders, and ${filesNuked} files.`
     })
   } catch (error) {
     next(error)
   }
 }
 
-export const getFolderTree = async (req: Request, res: Response, next: NextFunction) => {
+export const getFolderTree = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
   try {
-    const userId = (req as any).user.id
+    const userId = req.user?._id?.toString() || (req as any).user?.id
+    if (!userId) return next(new AppError('Unauthorized', 401))
 
-    // Fetch all folders, sorted alphabetically by path to make rendering the tree easy
-    const allFolders = await Folder.find({ user: userId }).sort({ path: 1 })
+    const allFolders = await FolderService.getTree(userId)
 
-    res.status(200).json({
-      success: true,
-      data: allFolders
-    })
+    res.status(200).json({ success: true, data: allFolders })
   } catch (error) {
     next(error)
   }
