@@ -1,30 +1,46 @@
 import { Router } from 'express'
+import { protect } from '../../core/middlewares/auth.middleware'
+import { validate } from '../../core/middlewares/validate.middleware' // 🛠️ NEW: Zod Validator
+
+import { createFolderSchema, updateFolderSchema } from './folder.schema' // 🛠️ NEW: Import Schemas
+
 import {
   createFolder,
   getFolderContents,
   renameFolder,
   deleteFolder,
-  getFolderTree // 🛠️ Make sure this is imported!
+  getFolderTree
 } from './folder.controller'
-import { protect } from '../../core/middlewares/auth.middleware'
 
 const router = Router()
 
 // 🛡️ Apply authentication to all folder routes
 router.use(protect)
 
-// 📁 Base routes
-router.post('/', createFolder)
+// ==========================================
+// 🛡️ STATIC ROUTES (Must go BEFORE /:id)
+// ==========================================
 
-// 🌳 Global Tree (MUST GO BEFORE /:folderId)
+// 📁 Create a folder (Validated)
+router.post('/', validate(createFolderSchema), createFolder)
+
+// 🌳 Global Tree
 router.get('/tree', getFolderTree)
 
-// 🔍 Fetching
-router.get('/', getFolderContents) // Fetches the Root directory
-router.get('/:folderId', getFolderContents) // Fetches a specific Sub-folder
+// 🔍 Fetch Root directory
+router.get('/', getFolderContents)
 
-// ✏️ Updates & Deletions
-router.put('/:id/rename', renameFolder)
+// ==========================================
+// 🔄 DYNAMIC ROUTES (/:id or /:folderId)
+// ==========================================
+
+// ✏️ Rename a folder (Validated)
+router.put('/:id/rename', validate(updateFolderSchema), renameFolder)
+
+// 🗑️ Delete a folder
 router.delete('/:id', deleteFolder)
+
+// 🔍 Fetch a specific Sub-folder
+router.get('/:folderId', getFolderContents)
 
 export default router
