@@ -14,22 +14,6 @@ export const askAI = async (req: Request, res: Response, next: NextFunction): Pr
   }
 }
 
-export const compareDocuments = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { doc1Id, doc2Id } = req.body
-    // 🧠 Hand off to the service
-    const comparison = await AIService.compareDocs(doc1Id, doc2Id)
-
-    res.status(200).json({ success: true, data: comparison })
-  } catch (error) {
-    next(error)
-  }
-}
-
 export const generateSemanticStructure = async (
   req: Request,
   res: Response,
@@ -79,7 +63,7 @@ export const getDocumentChatHistory = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { documentId } = req.params
+    const { documentId } = req.params as { documentId: string }
     const userId = (req as any).user._id
 
     // 🧠 Hand off to the service

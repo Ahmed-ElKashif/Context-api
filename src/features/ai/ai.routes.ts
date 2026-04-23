@@ -4,7 +4,6 @@ import { validate } from '../../core/middlewares/validate.middleware' // 🛠️
 
 import {
   askAISchema,
-  compareDocumentsSchema,
   generateSemanticStructureSchema,
   applySemanticFoldersSchema,
   chatHistoryParamsSchema
@@ -12,7 +11,6 @@ import {
 
 import {
   askAI,
-  compareDocuments,
   generateSemanticStructure,
   applySemanticFolders,
   getDocumentChatHistory
@@ -26,9 +24,6 @@ router.use(protect)
 // 💬 Chat Endpoints
 router.post('/chat', validate(askAISchema), askAI)
 router.get('/chat/:documentId', validate(chatHistoryParamsSchema), getDocumentChatHistory)
-
-// ⚖️ Compare Endpoint
-router.post('/compare', validate(compareDocumentsSchema), compareDocuments)
 
 // 🧠 Organize Folders (Generate Proposal)
 router.post(

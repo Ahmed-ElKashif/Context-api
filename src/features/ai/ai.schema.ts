@@ -8,14 +8,6 @@ export const askAISchema = z.object({
   })
 })
 
-// ⚖️ Validate Document Comparison
-export const compareDocumentsSchema = z.object({
-  body: z.object({
-    doc1Id: z.string().length(24, 'Invalid Document 1 ID format'),
-    doc2Id: z.string().length(24, 'Invalid Document 2 ID format')
-  })
-})
-
 // 🧠 Validate Semantic Folder Generation (The AI Proposal)
 export const generateSemanticStructureSchema = z.object({
   body: z.object({

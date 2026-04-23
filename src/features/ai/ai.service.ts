@@ -34,13 +34,18 @@ export class AIService {
   }
 
   // 3. Mock Folder Organization (The Proposal)
-  static async generateSemanticProposal(userId: string, documents: IDocument[]) {
+  // 🛠️ THE FIX: Typed exactly to match the frontend Zod payload instead of the Database Model
+  static async generateSemanticProposal(
+    userId: string,
+    documents: { _id?: string; id?: string; title: string }[]
+  ) {
     const existingPaths = await Folder.distinct('path', { user: userId })
     await new Promise((resolve) => setTimeout(resolve, 3000))
 
-    return documents.map((doc: IDocument) => {
+    return documents.map((doc) => {
       let newPath = 'Miscellaneous'
-      const titleLower = doc.title.toLowerCase()
+      // Safely fallback to an empty string if title is missing to prevent crashes
+      const titleLower = (doc.title || '').toLowerCase()
 
       if (titleLower.includes('invoice') || titleLower.includes('tax')) {
         newPath = existingPaths.includes('Finance/Invoices')
@@ -56,12 +61,17 @@ export class AIService {
         newPath = 'Media/Images'
       }
 
+      // TypeScript is now perfectly happy with both _id and id!
       return { documentId: doc._id || doc.id, newPath }
     })
   }
 
   // 4. The Final Boss: Recursive Folder Creation
-  static async applyPhysicalFolders(userId: string, updates: any[]) {
+  // 🛠️ THE FIX: Replaced `any[]` with a strict structural type
+  static async applyPhysicalFolders(
+    userId: string,
+    updates: { documentId: string; newPath: string }[]
+  ) {
     for (const update of updates) {
       const { documentId, newPath } = update
       if (!documentId || !newPath) continue

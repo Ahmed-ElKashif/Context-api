@@ -1,4 +1,4 @@
-import { DocumentModel } from './document.model'
+import { DocumentModel, IDocument } from './document.model'
 import fs from 'fs'
 import path from 'path'
 
@@ -11,7 +11,7 @@ export class DocumentService {
     limit: number,
     sortBy: string,
     sortOrder: 1 | -1
-  ) {
+  ): Promise<{ documents: IDocument[]; totalDocuments: number }> {
     const query: any = { user: userId }
 
     if (filters.tags) query.tags = { $in: filters.tags }
@@ -44,7 +44,12 @@ export class DocumentService {
   }
 
   // 2. Search Text Indexes
-  static async search(userId: string, q: string, skip: number, limit: number) {
+  static async search(
+    userId: string,
+    q: string,
+    skip: number,
+    limit: number
+  ): Promise<{ documents: IDocument[]; totalMatches: number }> {
     const searchQuery = {
       user: userId,
       $or: [
@@ -66,7 +71,11 @@ export class DocumentService {
   }
 
   // 3. Update Single Document
-  static async updateById(userId: string, docId: string, updateData: any) {
+  static async updateById(
+    userId: string,
+    docId: string,
+    updateData: Partial<IDocument>
+  ): Promise<IDocument | null> {
     const document = await DocumentModel.findOne({ _id: docId, user: userId })
     if (!document) return null
 
@@ -81,7 +90,7 @@ export class DocumentService {
   }
 
   // 4. Bulk Update Semantic Paths
-  static async bulkUpdatePaths(userId: string, updates: any[]) {
+  static async bulkUpdatePaths(userId: string, updates: { documentId: string; newPath: string }[]) {
     const bulkOps = updates.map((update) => ({
       updateOne: {
         filter: { _id: update.documentId, user: userId },
@@ -93,9 +102,9 @@ export class DocumentService {
   }
 
   // 5. Delete Single Document & Physical File
-  static async deleteById(userId: string, docId: string) {
+  static async deleteById(userId: string, docId: string): Promise<boolean> {
     const document = await DocumentModel.findOne({ _id: docId, user: userId })
-    if (!document) return null
+    if (!document) return false
 
     if (document.originalFilePath) {
       const filePath = path.join(process.cwd(), document.originalFilePath)
@@ -122,12 +131,12 @@ export class DocumentService {
   }
 
   // 7. Get Document by ID (Full payload)
-  static async getById(userId: string, docId: string) {
+  static async getById(userId: string, docId: string): Promise<IDocument | null> {
     return await DocumentModel.findOne({ _id: docId, user: userId }).populate('folder', 'name')
   }
 
   // 8. Get Physical File Path for Streaming
-  static async getFilePath(userId: string, docId: string) {
+  static async getFilePath(userId: string, docId: string): Promise<string | null> {
     const document = await DocumentModel.findOne({ _id: docId, user: userId })
     if (!document || !document.originalFilePath) return null
 
