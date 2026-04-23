@@ -1,75 +1,42 @@
 import { Request, Response, NextFunction } from 'express'
-import { DocumentModel } from './document.model'
 import { AppError } from '../../core/errors/AppError'
-import fs from 'fs'
-import path from 'path'
+import { DocumentService } from './document.service'
 
 // @route   GET /api/documents
-// @access  Private
 export const getAllDocuments = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const userId = req.user?._id
+    // 🛡️ THE GUARD CLAUSE
+    const userId = req.user?._id?.toString()
+    if (!userId) return next(new AppError('Unauthorized', 401))
 
     const page = parseInt(req.query.page as string, 10) || 1
     const limit = parseInt(req.query.limit as string, 10) || 10
     const skip = (page - 1) * limit
-
     const sortBy = (req.query.sortBy as string) || 'createdAt'
     const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1
 
-    const query: any = { user: userId }
-
-    if (req.query.tags) {
-      const tagsArray = (req.query.tags as string).split(',').map((tag) => tag.trim())
-      query.tags = { $in: tagsArray }
+    const filters = {
+      tags: req.query.tags
+        ? (req.query.tags as string).split(',').map((tag) => tag.trim())
+        : undefined,
+      fileType: req.query.fileType,
+      cognitiveLoad: req.query.cognitiveLoad,
+      semanticPath: req.query.semanticPath,
+      originalClientPath: req.query.originalClientPath
     }
 
-    if (req.query.fileType) {
-      query.fileType = req.query.fileType
-    }
-
-    if (req.query.cognitiveLoad) {
-      query.cognitiveLoad = req.query.cognitiveLoad
-    }
-
-    // --- UPGRADED: AI Semantic Folder Filter (Now supports drill-down!) ---
-    if (req.query.semanticPath) {
-      const folderName = (req.query.semanticPath as string).replace(/^\/+|\/+$/g, '')
-      const escapedFolder = folderName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-      query.semanticPath = {
-        $regex: `^/?${escapedFolder}(/|$)`,
-        $options: 'i'
-      }
-    }
-
-    // --- UPGRADED: Physical Client Folder Filter ---
-    if (req.query.originalClientPath) {
-      // 1. Clean the string: Remove any accidental leading or trailing slashes from the frontend
-      const folderName = (req.query.originalClientPath as string).replace(/^\/+|\/+$/g, '')
-
-      // 2. Escape any weird characters in the folder name
-      const escapedFolder = folderName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-
-      // 3. THE FIX: Loosen the Regex!
-      // It must start with the folder name, followed by a slash OR the end of the string.
-      // This grabs ALL nested documents so the frontend can build the sub-folder UI.
-      query.originalClientPath = {
-        $regex: `^/?${escapedFolder}(/|$)`,
-        $options: 'i'
-      }
-    }
-
-    const documents = await DocumentModel.find(query)
-      .sort({ [sortBy]: sortOrder })
-      .skip(skip)
-      .limit(limit)
-      .select('-extractedText -__v')
-
-    const totalDocuments = await DocumentModel.countDocuments(query)
+    const { documents, totalDocuments } = await DocumentService.getAll(
+      userId,
+      filters,
+      skip,
+      limit,
+      sortBy,
+      sortOrder
+    )
 
     res.status(200).json({
       success: true,
@@ -86,31 +53,61 @@ export const getAllDocuments = async (
     next(error)
   }
 }
+
+// @route   GET /api/documents/search
+export const searchDocuments = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id?.toString()
+    if (!userId) return next(new AppError('Unauthorized', 401))
+
+    const { q, page = 1, limit = 10 } = req.query
+    const skip = (Number(page) - 1) * Number(limit)
+
+    const { documents, totalMatches } = await DocumentService.search(
+      userId,
+      q as string,
+      skip,
+      Number(limit)
+    )
+
+    res.status(200).json({
+      success: true,
+      pagination: {
+        currentPage: Number(page),
+        totalPages: Math.ceil(totalMatches / Number(limit)),
+        totalItems: totalMatches,
+        limit: Number(limit)
+      },
+      data: documents
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
 // @route   PUT /api/documents/:id
-// @access  Private
 export const updateDocument = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { id } = req.params
-    // REMOVED folderId, ADDED semanticPath & originalClientPath
-    const { title, tags, cognitiveLoad, semanticPath, originalClientPath } = req.body
+    const userId = req.user?._id?.toString()
+    if (!userId) return next(new AppError('Unauthorized', 401))
+    const id = req.params?.id
+    if (typeof id !== 'string') {
+      return next(new AppError('Invalid document ID', 400))
+    }
 
-    const document = await DocumentModel.findOne({ _id: id, user: req.user?._id })
+    const document = await DocumentService.updateById(userId, id, req.body)
 
     if (!document) {
       return next(new AppError('Document not found or unauthorized', 404))
     }
-
-    if (title) document.title = title
-    if (tags) document.tags = tags
-    if (cognitiveLoad) document.cognitiveLoad = cognitiveLoad
-    if (semanticPath) document.semanticPath = semanticPath
-    if (originalClientPath) document.originalClientPath = originalClientPath
-
-    await document.save()
 
     res.status(200).json({ success: true, data: document })
   } catch (error) {
@@ -118,33 +115,17 @@ export const updateDocument = async (
   }
 }
 
-// NEW: @route   PUT /api/documents/bulk/semantic-paths
-// NEW: @access  Private
-// Description: Blazing fast bulk update for when the user clicks "Accept Organization"
+// @route   PUT /api/documents/bulk/semantic-paths
 export const bulkUpdateSemanticPaths = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const userId = req.user?._id
-    // Expects an array like: [{ documentId: "123", newPath: "Work/Invoices" }, ...]
-    const { updates } = req.body
+    const userId = req.user?._id?.toString()
+    if (!userId) return next(new AppError('Unauthorized', 401))
 
-    if (!updates || !Array.isArray(updates) || updates.length === 0) {
-      return next(new AppError('Please provide an array of path updates', 400))
-    }
-
-    // Build the bulk operations array for MongoDB
-    const bulkOps = updates.map((update) => ({
-      updateOne: {
-        filter: { _id: update.documentId, user: userId }, // Ensure they only update THEIR files
-        update: { $set: { semanticPath: update.newPath } }
-      }
-    }))
-
-    // Execute all updates in a single database trip
-    const result = await DocumentModel.bulkWrite(bulkOps)
+    const result = await DocumentService.bulkUpdatePaths(userId, req.body.updates)
 
     res.status(200).json({
       success: true,
@@ -156,29 +137,25 @@ export const bulkUpdateSemanticPaths = async (
 }
 
 // @route   DELETE /api/documents/:id
-// @access  Private
 export const deleteDocument = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { id } = req.params
+    const userId = req.user?._id?.toString()
+    if (!userId) return next(new AppError('Unauthorized', 401))
 
-    const document = await DocumentModel.findOne({ _id: id, user: req.user?._id })
+    const id = req.params?.id
+    if (typeof id !== 'string') {
+      return next(new AppError('Invalid document ID', 400))
+    }
 
-    if (!document) {
+    const deleted = await DocumentService.deleteById(userId, id)
+
+    if (!deleted) {
       return next(new AppError('Document not found or unauthorized', 404))
     }
-
-    if (document.originalFilePath) {
-      const filePath = path.join(process.cwd(), document.originalFilePath)
-      if (fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath)
-      }
-    }
-
-    await document.deleteOne()
 
     res.status(200).json({ success: true, message: 'Document deleted successfully' })
   } catch (error) {
@@ -186,43 +163,76 @@ export const deleteDocument = async (
   }
 }
 
-// NEW: @route   DELETE /api/documents/bulk
-// NEW: @access  Private
-// Description: Bulk delete multiple documents by their IDs
+// @route   DELETE /api/documents/bulk
 export const bulkDeleteDocuments = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { ids } = req.body
+    const userId = req.user?._id?.toString()
+    if (!userId) return next(new AppError('Unauthorized', 401))
 
-    if (!ids || !Array.isArray(ids) || ids.length === 0) {
-      return next(new AppError('Please provide an array of document IDs to delete', 400))
-    }
-
-    const query = {
-      _id: { $in: ids }, // Match any ID in the array
-      user: req.user?._id // Security: Ensure they only delete their own files
-    }
-
-    // 1. Find them first so we can delete the physical files off the server
-    const documents = await DocumentModel.find(query)
-
-    for (const doc of documents) {
-      if (doc.originalFilePath) {
-        const filePath = path.join(process.cwd(), doc.originalFilePath)
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
-      }
-    }
-
-    // 2. Now delete them all from MongoDB in a single operation
-    const result = await DocumentModel.deleteMany(query)
+    const result = await DocumentService.bulkDelete(userId, req.body.ids)
 
     res.status(200).json({
       success: true,
       message: `Successfully deleted ${result.deletedCount} documents.`
     })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// @route   GET /api/documents/:id
+export const getDocumentById = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id?.toString()
+    if (!userId) return next(new AppError('Unauthorized', 401))
+
+    const id = req.params?.id
+    if (typeof id !== 'string') {
+      return next(new AppError('Invalid document ID', 400))
+    }
+
+    const document = await DocumentService.getById(userId, id)
+
+    if (!document) {
+      return next(new AppError('Document not found or unauthorized', 404))
+    }
+
+    res.status(200).json({ success: true, data: document })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// @route   GET /api/documents/:id/file
+export const serveDocumentFile = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id?.toString()
+    if (!userId) return next(new AppError('Unauthorized', 401))
+
+    const id = req.params?.id
+    if (typeof id !== 'string') {
+      return next(new AppError('Invalid document ID', 400))
+    }
+
+    const filePath = await DocumentService.getFilePath(userId, id)
+
+    if (!filePath) {
+      return next(new AppError('Physical file is missing from the server or unauthorized', 404))
+    }
+
+    res.sendFile(filePath)
   } catch (error) {
     next(error)
   }

@@ -1,18 +1,17 @@
 import { Request, Response, NextFunction } from 'express'
-import { User } from './user.model'
+import { UserService } from './user.service'
 import { AppError } from '../../core/errors/AppError'
-import bcrypt from 'bcryptjs'
 
-// @route   GET /api/users/profile
-// @access  Private (Requires JWT)
 export const getUserProfile = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    // req.user is guaranteed by our requireAuth middleware
-    const user = await User.findById(req.user?._id)
+    const userId = req.user?._id?.toString() || (req as any).user?.id // Strict typings
+    if (!userId) return next(new AppError('Unauthorized', 401))
+
+    const user = await UserService.getProfileById(userId)
 
     if (!user) {
       return next(new AppError('User not found', 404))
@@ -34,51 +33,29 @@ export const getUserProfile = async (
   }
 }
 
-// @route   PUT /api/users/profile
-// @access  Private (Requires JWT)
 export const updateUserProfile = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const user = await User.findById(req.user?._id)
+    const userId = req.user?._id?.toString() || (req as any).user?.id
+    if (!userId) return next(new AppError('Unauthorized', 401))
 
-    if (!user) {
-      return next(new AppError('User not found', 404))
+    const result = await UserService.updateProfile(userId, req.body)
+
+    if (result.error) {
+      return next(new AppError(result.error.message, result.error.statusCode))
     }
-
-    const { fullName, username, password, persona } = req.body
-
-    // If they want to change their username, check if it's taken!
-    if (username && username !== user.username) {
-      const usernameTaken = await User.findOne({ username })
-      if (usernameTaken) {
-        return next(new AppError('This username is already taken', 400))
-      }
-      user.username = username
-    }
-
-    // Update the other basic fields if they were provided
-    if (fullName) user.fullName = fullName
-    if (persona) user.persona = persona
-
-    // Hash the new password manually before saving
-    if (password) {
-      const salt = await bcrypt.genSalt(10)
-      user.passwordHash = await bcrypt.hash(password, salt)
-    }
-
-    const updatedUser = await user.save()
 
     res.status(200).json({
       success: true,
       data: {
-        id: updatedUser._id,
-        fullName: updatedUser.fullName,
-        username: updatedUser.username,
-        email: updatedUser.email,
-        persona: updatedUser.persona
+        id: result.user?._id,
+        fullName: result.user?.fullName,
+        username: result.user?.username,
+        email: result.user?.email,
+        persona: result.user?.persona
       }
     })
   } catch (error) {

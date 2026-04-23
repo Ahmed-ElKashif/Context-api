@@ -1,25 +1,38 @@
 import { Router } from 'express'
-import { protect } from '../../core/middlewares/auth.middleware' 
-import { 
-  askAI, 
-  compareDocuments, 
+import { protect } from '../../core/middlewares/auth.middleware'
+import { validate } from '../../core/middlewares/validate.middleware' // 🛠️ NEW: Import Validator
+
+import {
+  askAISchema,
+  generateSemanticStructureSchema,
+  applySemanticFoldersSchema,
+  chatHistoryParamsSchema
+} from './ai.schema' // 🛠️ NEW: Import Schemas
+
+import {
+  askAI,
   generateSemanticStructure,
-  applySemanticFolders // 🛠️ NEW: Import our final boss controller!
+  applySemanticFolders,
+  getDocumentChatHistory
 } from './ai.controller'
 
 const router = Router()
 
 // Protect AI routes
-router.use(protect) // 🛠️ THE FIX: Updated name
+router.use(protect)
 
-// Endpoints
-router.post('/chat', askAI)
-router.post('/compare', compareDocuments)
+// 💬 Chat Endpoints
+router.post('/chat', validate(askAISchema), askAI)
+router.get('/chat/:documentId', validate(chatHistoryParamsSchema), getDocumentChatHistory)
 
-// Endpoint for the Before & After Smart Folder Feature (Generates the Proposal)
-router.post('/organize-folder', generateSemanticStructure)
+// 🧠 Organize Folders (Generate Proposal)
+router.post(
+  '/organize-folder',
+  validate(generateSemanticStructureSchema),
+  generateSemanticStructure
+)
 
-// 🛠️ NEW: Endpoint to physically create the folders in MongoDB and apply them!
-router.put('/apply-folders', applySemanticFolders)
+// 📁 Apply Folders (Physical DB updates)
+router.put('/apply-folders', validate(applySemanticFoldersSchema), applySemanticFolders)
 
 export default router
