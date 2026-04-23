@@ -3,8 +3,7 @@ import cors from 'cors'
 import helmet from 'helmet'
 import morgan from 'morgan'
 import rateLimit from 'express-rate-limit'
-import mongoSanitize from 'express-mongo-sanitize'
-import hpp from 'hpp'
+
 import path from 'path'
 
 import { AppError } from './core/errors/AppError'
@@ -24,6 +23,15 @@ const app: Application = express()
 // 🛡️ 1. SECURITY MIDDLEWARES
 // ==========================================
 
+// Implement CORS (Cross-Origin Resource Sharing)
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173', // Only allow your frontend to talk to this API
+    credentials: true, // Allow cookies/tokens to be sent
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
+  })
+)
+
 // Set security HTTP headers
 app.use(helmet())
 
@@ -37,21 +45,6 @@ app.use('/api', limiter)
 
 // Body parser, reading data from body into req.body
 app.use(express.json({ limit: '10kb' })) // Prevents massive payload attacks
-
-// Data sanitization against NoSQL query injection (Stops hackers from bypassing auth)
-app.use(mongoSanitize())
-
-// Prevent HTTP Parameter Pollution (Stops things like ?sort=name&sort=age crashing the server)
-app.use(hpp())
-
-// Implement CORS (Cross-Origin Resource Sharing)
-app.use(
-  cors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000', // Only allow your frontend to talk to this API
-    credentials: true, // Allow cookies/tokens to be sent
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
-  })
-)
 
 // ==========================================
 // ⚙️ 2. UTILITY MIDDLEWARES
@@ -84,8 +77,8 @@ app.use('/api/comparison', comparisonRoutes)
 
 // 404 Handler for undefined routes
 app.use((req: Request, res: Response, next: NextFunction) => {
-  next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
-});
+  next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404))
+})
 
 // ==========================================
 // 🚨 4. GLOBAL ERROR HANDLER
