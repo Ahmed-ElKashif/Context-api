@@ -57,51 +57,72 @@ export const getFolderContents = async (req: Request, res: Response, next: NextF
     const page = parseInt(req.query.page as string, 10) || 1
     const limit = parseInt(req.query.limit as string, 10) || 10
     const skip = (page - 1) * limit
+    
+    // 🔍 Extract search and tags from the query string
+    const search = req.query.search as string;
+    const tags = req.query.tags as string;
 
-    const folders = await Folder.find({
-      user: userId,
-      parentFolder: targetFolderId
-    }).sort({ name: 1 })
+    // --- 🛠️ THE FIX: BUILD A DYNAMIC QUERY ---
+    let docQuery: any = { user: userId };
 
-    const documents = await DocumentModel.find({
-      user: userId,
-      folder: targetFolderId
-    })
+    // If we are NOT searching globally, restrict files to the current folder
+    if (!search && !tags) {
+      docQuery.folder = targetFolderId;
+    }
+
+    // If there is a search term, use Regex to match the title or tags (case-insensitive)
+    if (search) {
+      docQuery.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { tags: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // If a tag filter is active, require that tag
+    if (tags) {
+      docQuery.tags = tags;
+    }
+
+    // 1. Fetch Folders (We only need to fetch folders if we aren't searching)
+    let folders: mongoose.Document[] = [];
+    if (!search && !tags) {
+      folders = await Folder.find({
+        user: userId,
+        parentFolder: targetFolderId
+      }).sort({ name: 1 })
+    }
+
+    // 2. Fetch Documents (Using our new dynamic docQuery!)
+    const documents = await DocumentModel.find(docQuery)
       .sort({ updatedAt: -1 })
       .skip(skip)
       .limit(limit)
 
-    const totalDocuments = await DocumentModel.countDocuments({
-      user: userId,
-      folder: targetFolderId
-    })
+    // 3. Count total documents for pagination
+    const totalDocuments = await DocumentModel.countDocuments(docQuery)
 
+    // 4. Build Breadcrumbs
     let currentFolder = null
-    let breadcrumbs: mongoose.Document[] = [] // 🛠️ NEW: Array of Parent Folders for the UI Header!
+    let breadcrumbs: mongoose.Document[] = [] 
 
     if (!isRoot) {
       currentFolder = await Folder.findById(targetFolderId)
 
       if (currentFolder) {
-        // Build the ancestor string paths (e.g., ["mock", "mock/My Files"])
         const pathParts = currentFolder.path.split('/')
         const ancestorPaths = []
         let cumulativePath = ''
 
-        // Loop up to the second-to-last item (we don't need the current folder in the breadcrumb ancestors)
         for (let i = 0; i < pathParts.length - 1; i++) {
           cumulativePath = cumulativePath ? `${cumulativePath}/${pathParts[i]}` : pathParts[i]
           ancestorPaths.push(cumulativePath)
         }
 
-        // Fetch all parent folders in one quick database trip
         if (ancestorPaths.length > 0) {
           const ancestors = await Folder.find({
             user: userId,
             path: { $in: ancestorPaths }
           })
-
-          // Sort them by path length so they are in the correct top-down order
           breadcrumbs = ancestors.sort((a, b) => a.path.length - b.path.length)
         }
       }
@@ -117,7 +138,7 @@ export const getFolderContents = async (req: Request, res: Response, next: NextF
       },
       data: {
         currentFolder,
-        breadcrumbs, // 🛠️ NEW: Added to the response payload!
+        breadcrumbs, 
         folders,
         documents
       }
@@ -138,7 +159,6 @@ export const renameFolder = async (req: Request, res: Response, next: NextFuncti
       return res.status(404).json({ error: 'Folder not found.' })
     }
 
-    // Check for naming collisions in the same parent directory
     const collision = await Folder.findOne({
       name: newName,
       parentFolder: folder.parentFolder,
@@ -149,15 +169,11 @@ export const renameFolder = async (req: Request, res: Response, next: NextFuncti
       return res.status(400).json({ error: 'Name already in use in this destination.' })
     }
 
-    // Update name and regenerate the path string
     const oldName = folder.name
     folder.name = newName
     folder.path = folder.path.replace(new RegExp(`${oldName}$`), newName)
 
     await folder.save()
-
-    // Note: In a massive enterprise app, renaming a parent folder would require a background
-    // worker to update the `path` string of all deeply nested child folders. For MVP, this is fine!
 
     res.status(200).json({ success: true, data: folder })
   } catch (error) {
@@ -175,8 +191,6 @@ export const deleteFolder = async (req: Request, res: Response, next: NextFuncti
       return res.status(404).json({ error: 'Folder not found.' })
     }
 
-    // 1. Find the folder AND all sub-folders nested inside it
-    // Escaping regex chars just in case the folder name has a weird symbol
     const escapedPath = targetFolder.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const folderQuery = {
       user: userId,
@@ -186,13 +200,11 @@ export const deleteFolder = async (req: Request, res: Response, next: NextFuncti
     const foldersToDelete = await Folder.find(folderQuery)
     const folderIdsToDelete = foldersToDelete.map((f) => f._id)
 
-    // 2. Find all documents that live inside ANY of these folders
     const documentsToDelete = await DocumentModel.find({
       user: userId,
       folder: { $in: folderIdsToDelete }
     })
 
-    // 3. Clean up the physical hard drive (Wipe the actual files)
     for (const doc of documentsToDelete) {
       if (doc.originalFilePath) {
         const filePath = path.join(process.cwd(), doc.originalFilePath)
@@ -202,7 +214,6 @@ export const deleteFolder = async (req: Request, res: Response, next: NextFuncti
       }
     }
 
-    // 4. Wipe them from the database in two clean, massive sweeps!
     await DocumentModel.deleteMany({ user: userId, folder: { $in: folderIdsToDelete } })
     await Folder.deleteMany({ user: userId, _id: { $in: folderIdsToDelete } })
 
@@ -218,8 +229,6 @@ export const deleteFolder = async (req: Request, res: Response, next: NextFuncti
 export const getFolderTree = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const userId = (req as any).user.id
-
-    // Fetch all folders, sorted alphabetically by path to make rendering the tree easy
     const allFolders = await Folder.find({ user: userId }).sort({ path: 1 })
 
     res.status(200).json({
