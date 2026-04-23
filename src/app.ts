@@ -83,9 +83,9 @@ app.use('/api/folders', folderRoutes)
 app.use('/api/comparison', comparisonRoutes)
 
 // 404 Handler for undefined routes
-app.all('*', (req: Request, res: Response, next: NextFunction) => {
-  next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404))
-})
+app.use((req: Request, res: Response, next: NextFunction) => {
+  next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
+});
 
 // ==========================================
 // 🚨 4. GLOBAL ERROR HANDLER

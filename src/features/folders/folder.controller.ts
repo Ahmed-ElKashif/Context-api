@@ -27,35 +27,52 @@ export const createFolder = async (
 }
 
 export const getFolderContents = async (
-  req: Request,
-  res: Response,
+  req: Request, 
+  res: Response, 
   next: NextFunction
 ): Promise<void> => {
   try {
     const userId = req.user?._id?.toString() || (req as any).user?.id
     if (!userId) return next(new AppError('Unauthorized', 401))
 
-    // 🛠️ THE FIX: Explicitly cast to string so TypeScript knows it won't be undefined
-    const folderId = req.params.folderId as string
+   // 🛠️ THE FIX: Explicitly cast folderId as a string
+const folderId = req.params.folderId as string;
 
-    const isRoot = !folderId || folderId === 'root'
-    const targetFolderId = isRoot ? null : folderId // This is now perfectly typed as string | null
+const isRoot = !folderId || folderId === 'root';
+const targetFolderId = isRoot ? null : folderId;
 
     const page = parseInt(req.query.page as string, 10) || 1
     const limit = parseInt(req.query.limit as string, 10) || 10
     const skip = (page - 1) * limit
+    
+    // 🔍 Extract search and tags from the query string
+    const search = req.query.search as string;
+    const tags = req.query.tags as string;
 
-    const data = await FolderService.getContents(userId, targetFolderId, skip, limit)
+    // 🛠️ THE FIX: Pass the search and tags down to the service!
+    const result = await FolderService.getContents(
+      userId, 
+      targetFolderId,
+      skip, 
+      limit, 
+      search, 
+      tags
+    );
 
     res.status(200).json({
       success: true,
       pagination: {
         currentPage: page,
-        totalPages: Math.ceil(data.totalDocuments / limit),
-        totalItems: data.totalDocuments,
+        totalPages: Math.ceil(result.totalDocuments / limit),
+        totalItems: result.totalDocuments,
         limit
       },
-      data
+      data: {
+        currentFolder: result.currentFolder,
+        breadcrumbs: result.breadcrumbs, 
+        folders: result.folders,
+        documents: result.documents
+      }
     })
   } catch (error) {
     next(error)
@@ -71,7 +88,6 @@ export const renameFolder = async (
     const userId = req.user?._id?.toString() || (req as any).user?.id
     if (!userId) return next(new AppError('Unauthorized', 401))
 
-    // 🛠️ THE FIX: Explicitly cast 'id' as a string so the Service is happy
     const id = req.params.id as string
     const newName = req.body.newName
 
@@ -82,7 +98,6 @@ export const renameFolder = async (
     const result = await FolderService.renameFolder(userId, id, newName)
 
     if (result.error) {
-      // Return 404 for not found, 400 for collisions
       const status = result.error === 'Folder not found.' ? 404 : 400
       res.status(status).json({ success: false, error: result.error })
       return
@@ -103,7 +118,6 @@ export const deleteFolder = async (
     const userId = req.user?._id?.toString() || (req as any).user?.id
     if (!userId) return next(new AppError('Unauthorized', 401))
 
-    // 🛠️ THE FIX: Explicitly cast 'id' as a string
     const id = req.params.id as string
 
     if (!id) {
@@ -117,7 +131,6 @@ export const deleteFolder = async (
       return
     }
 
-    // 🛠️ THE FIX: Safely fallback to 1 (so 1 - 1 = 0 subfolders) and 0 if TS gets confused
     const foldersNuked = result.foldersDeleted ?? 1
     const filesNuked = result.documentsDeleted ?? 0
 

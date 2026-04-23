@@ -5,7 +5,7 @@ import Folder, { IFolder } from './folder.model'
 import { DocumentModel, IDocument } from '../documents/document.model'
 
 export class FolderService {
-  // 1. Create a Folder (Strictly typed return object)
+  // 1. Create a Folder
   static async createFolder(
     userId: string,
     name: string,
@@ -36,12 +36,14 @@ export class FolderService {
     return { folder }
   }
 
-  // 2. Get Folder Contents
+  // 2. Get Folder Contents (🛠️ FIX: Added Search & Tags parameters)
   static async getContents(
     userId: string,
     targetFolderId: string | null,
     skip: number,
-    limit: number
+    limit: number,
+    search?: string,
+    tags?: string
   ): Promise<{
     currentFolder: IFolder | null
     breadcrumbs: IFolder[]
@@ -49,20 +51,46 @@ export class FolderService {
     documents: IDocument[]
     totalDocuments: number
   }> {
-    const folders = await Folder.find({ user: userId, parentFolder: targetFolderId }).sort({
-      name: 1
-    })
+    
+    // --- 🛠️ THE FIX: BUILD A DYNAMIC QUERY ---
+    let docQuery: any = { user: userId };
 
-    const documents = await DocumentModel.find({ user: userId, folder: targetFolderId })
+    // If we are NOT searching globally, restrict files to the current folder
+    if (!search && !tags) {
+      docQuery.folder = targetFolderId;
+    }
+
+    // If there is a search term, use Regex to match the title or tags (case-insensitive)
+    if (search) {
+      docQuery.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { tags: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // If a tag filter is active, require that tag
+    if (tags) {
+      docQuery.tags = tags;
+    }
+
+    // 1. Fetch Folders (We only need to fetch folders if we aren't searching)
+    let folders: IFolder[] = [];
+    if (!search && !tags) {
+      folders = await Folder.find({ user: userId, parentFolder: targetFolderId }).sort({
+        name: 1
+      });
+    }
+
+    // 2. Fetch Documents (Using our new dynamic docQuery!)
+    const documents = await DocumentModel.find(docQuery)
       .sort({ updatedAt: -1 })
       .skip(skip)
       .limit(limit)
 
-    const totalDocuments = await DocumentModel.countDocuments({
-      user: userId,
-      folder: targetFolderId
-    })
+    // 3. Count total documents for pagination
+    const totalDocuments = await DocumentModel.countDocuments(docQuery)
 
+    // 4. Breadcrumbs logic
     let currentFolder: IFolder | null = null
     let breadcrumbs: IFolder[] = []
 
@@ -89,7 +117,7 @@ export class FolderService {
     return { currentFolder, breadcrumbs, folders, documents, totalDocuments }
   }
 
-  // 3. Rename a Folder (Strictly typed return object)
+  // 3. Rename a Folder
   static async renameFolder(
     userId: string,
     folderId: string,
