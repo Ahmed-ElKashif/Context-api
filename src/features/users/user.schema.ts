@@ -10,6 +10,11 @@ export const updateProfileSchema = z.object({
       .regex(/^[a-zA-Z0-9_]+$/, 'Letters, numbers, and underscores only')
       .optional(),
 
+    email: z
+      .string()
+      .email('Invalid email address')
+      .optional(),
+
     password: z
       .string()
       .min(8, 'Master key must be at least 8 characters')
@@ -17,6 +22,16 @@ export const updateProfileSchema = z.object({
       .regex(/[0-9]/, 'Must contain at least one number')
       .optional(),
 
+    currentPassword: z.string().min(1, 'Current master key is required').optional(),
+
     persona: z.enum(['general', 'professional', 'student', 'developer']).optional()
+  }).superRefine((data, ctx) => {
+    if (data.password && !data.currentPassword) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['currentPassword'],
+        message: 'Current master key is required to change password'
+      })
+    }
   })
 })

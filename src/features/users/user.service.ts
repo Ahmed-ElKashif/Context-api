@@ -11,7 +11,9 @@ export class UserService {
     updateData: {
       fullName?: string
       username?: string
+      email?: string
       password?: string
+      currentPassword?: string
       persona?: 'general' | 'professional' | 'student' | 'developer'
     }
   ): Promise<{ user?: IUser; error?: { message: string; statusCode: number } }> {
@@ -25,10 +27,26 @@ export class UserService {
       user.username = updateData.username
     }
 
+    if (updateData.email && updateData.email !== user.email) {
+      const emailTaken = await User.findOne({ email: updateData.email })
+      if (emailTaken)
+        return { error: { message: 'This email is already taken', statusCode: 400 } }
+      user.email = updateData.email
+    }
+
     if (updateData.fullName) user.fullName = updateData.fullName
     if (updateData.persona) user.persona = updateData.persona
 
     if (updateData.password) {
+      if (!updateData.currentPassword) {
+        return { error: { message: 'Current master key is required to change password', statusCode: 400 } }
+      }
+
+      const isCurrentPasswordValid = await bcrypt.compare(updateData.currentPassword, user.passwordHash)
+      if (!isCurrentPasswordValid) {
+        return { error: { message: 'Current master key is incorrect', statusCode: 400 } }
+      }
+
       const salt = await bcrypt.genSalt(10)
       user.passwordHash = await bcrypt.hash(updateData.password, salt)
     }
