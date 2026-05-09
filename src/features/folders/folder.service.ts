@@ -5,8 +5,13 @@ import { configureCloudinary } from '../../config/cloudinary'
 
 const cloudinary = configureCloudinary()
 
+/**
+ * Cloudinary stores images and PDFs under the 'image' resource type when uploaded with 'auto'.
+ * Word documents and others are stored as 'raw'.
+ * We must pass the correct resource_type to `destroy()` or the deletion silently fails.
+ */
 const getResourceType = (fileType: string): 'image' | 'raw' => {
-  return fileType === 'Image' ? 'image' : 'raw'
+  return fileType === 'Image' || fileType === 'PDF' ? 'image' : 'raw'
 }
 
 export class FolderService {
