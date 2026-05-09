@@ -10,6 +10,8 @@ export interface IUser extends Document {
   passwordHash: string
 
   persona: 'general' | 'professional' | 'student' | 'developer'
+  avatar?: string
+  avatarPublicId?: string
   files?: IDocument[] //  (It's optional because it only exists if you populate it)
 
   createdAt: Date
@@ -41,6 +43,9 @@ const userSchema = new Schema<IUser>(
       enum: ['general', 'professional', 'student', 'developer'],
       default: 'general'
     }
+    ,
+    avatar: { type: String, required: false },
+    avatarPublicId: { type: String, required: false }
   },
   {
     timestamps: true // Automatically manages createdAt and updatedAt

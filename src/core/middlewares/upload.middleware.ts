@@ -56,3 +56,13 @@ export const upload = multer({
     fileSize: 10 * 1024 * 1024 // Set a 10MB file size limit to prevent server crashes
   }
 })
+
+// Memory storage variant: useful for streaming uploads directly to third-party
+// services (Cloudinary) without writing to disk.
+export const uploadMemory = multer({
+  storage: multer.memoryStorage(),
+  fileFilter,
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+  },
+})
