@@ -28,7 +28,7 @@ app.use(
   cors({
     origin: process.env.FRONTEND_URL || 'http://localhost:5173', // Only allow your frontend to talk to this API
     credentials: true, // Allow cookies/tokens to be sent
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS']
   })
 )
 

@@ -20,7 +20,8 @@ export const register = async (req: Request, res: Response, next: NextFunction):
         fullName: result.user?.fullName,
         username: result.user?.username,
         email: result.user?.email,
-        persona: result.user?.persona
+        persona: result.user?.persona,
+        avatar: (result.user as any)?.avatar
       }
     })
   } catch (error) {
@@ -46,7 +47,8 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
         fullName: result.user?.fullName,
         username: result.user?.username,
         email: result.user?.email,
-        persona: result.user?.persona
+        persona: result.user?.persona,
+        avatar: (result.user as any)?.avatar
       }
     })
   } catch (error) {
