@@ -41,7 +41,7 @@ export class FolderService {
     return { folder }
   }
 
-  // 2. Get Folder Contents (🛠️ FIX: Added Search & Tags parameters)
+  // 2. Get Folder Contents (🛠️ THE PAGINATION FIX)
   static async getContents(
     userId: string,
     targetFolderId: string | null,
@@ -57,43 +57,58 @@ export class FolderService {
     totalDocuments: number
   }> {
     
-    // --- 🛠️ THE FIX: BUILD A DYNAMIC QUERY ---
     let docQuery: any = { user: userId };
+    if (!search && !tags) docQuery.folder = targetFolderId;
+    if (search) docQuery.$or = [
+      { title: { $regex: search, $options: 'i' } },
+      { tags: { $regex: search, $options: 'i' } }
+    ];
+    if (tags) docQuery.tags = tags;
 
-    // If we are NOT searching globally, restrict files to the current folder
-    if (!search && !tags) {
-      docQuery.folder = targetFolderId;
-    }
+    // 1. Get EXACT counts for both collections first
+    const folderQuery = { user: userId, parentFolder: targetFolderId };
+    const folderCount = (!search && !tags) ? await Folder.countDocuments(folderQuery) : 0;
+    const documentCount = await DocumentModel.countDocuments(docQuery);
+    
+    // 2. The true combined total for your frontend UI
+    const totalDocuments = folderCount + documentCount;
 
-    // If there is a search term, use Regex to match the title or tags (case-insensitive)
-    if (search) {
-      docQuery.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { tags: { $regex: search, $options: 'i' } }
-      ];
-    }
-
-    // If a tag filter is active, require that tag
-    if (tags) {
-      docQuery.tags = tags;
-    }
-
-    // 1. Fetch Folders (We only need to fetch folders if we aren't searching)
     let folders: IFolder[] = [];
+    let documents: IDocument[] = [];
+
+    // 3. 🧠 THE SMART PAGINATION LOGIC
     if (!search && !tags) {
-      folders = await Folder.find({ user: userId, parentFolder: targetFolderId }).sort({
-        name: 1
-      });
+      if (skip < folderCount) {
+        // SCENARIO A: We are still paginating through folders
+        const folderLimit = Math.min(limit, folderCount - skip);
+        folders = await Folder.find(folderQuery)
+          .sort({ name: 1 })
+          .skip(skip)
+          .limit(folderLimit);
+
+        // Do we have extra space on this page to start showing documents?
+        const remainingSpace = limit - folders.length;
+        if (remainingSpace > 0) {
+          documents = await DocumentModel.find(docQuery)
+            .sort({ updatedAt: -1 })
+            .skip(0) // Start at the very first document
+            .limit(remainingSpace);
+        }
+      } else {
+        // SCENARIO B: We have skipped past all the folders. ONLY fetch documents.
+        const docSkip = skip - folderCount;
+        documents = await DocumentModel.find(docQuery)
+          .sort({ updatedAt: -1 })
+          .skip(docSkip)
+          .limit(limit);
+      }
+    } else {
+      // SCENARIO C: If searching/filtering, we are only looking at documents
+      documents = await DocumentModel.find(docQuery)
+        .sort({ updatedAt: -1 })
+        .skip(skip)
+        .limit(limit);
     }
-
-    // 2. Fetch Documents (Using our new dynamic docQuery!)
-    const documents = await DocumentModel.find(docQuery)
-      .sort({ updatedAt: -1 })
-      .skip(skip)
-      .limit(limit)
-
-    // 3. Count total documents for pagination
-    const totalDocuments = await DocumentModel.countDocuments(docQuery)
 
     // 4. Breadcrumbs logic
     let currentFolder: IFolder | null = null
