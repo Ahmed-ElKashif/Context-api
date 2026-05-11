@@ -1,13 +1,64 @@
 import { Request, Response, NextFunction } from 'express'
 import { DocumentModel, DocumentType } from './document.model'
 import { AppError } from '../../core/errors/AppError'
-import Folder, { IFolder } from '../folders/folder.model';
+import Folder, { IFolder } from '../folders/folder.model'
+import { configureCloudinary } from '../../config/cloudinary'
+import streamifier from 'streamifier'
 
+// Ensure Cloudinary is configured
+const cloudinary = configureCloudinary()
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Map a MIME type to your DocumentType enum value.
+ */
 const getFileTypeFromMime = (mimeType: string): DocumentType => {
   if (mimeType.includes('pdf')) return 'PDF'
   if (mimeType.includes('word') || mimeType.includes('officedocument')) return 'Word'
   if (mimeType.includes('image')) return 'Image'
   return 'TextSnippet'
+}
+
+/**
+ * Map a DocumentType to the Cloudinary sub-folder name.
+ */
+const getCloudinaryFolder = (docType: DocumentType): string => {
+  switch (docType) {
+    case 'PDF': return 'documents/pdf'
+    case 'Image': return 'documents/images'
+    case 'Word': return 'documents/word'
+    default: return 'documents/other'
+  }
+}
+
+/**
+ * Upload a file buffer to Cloudinary and resolve with the upload result.
+ * Uses the upload_stream API so nothing is written to disk.
+ */
+const uploadBufferToCloudinary = (
+  buffer: Buffer,
+  folder: string,
+  originalName: string
+): Promise<{ secure_url: string; public_id: string }> => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder,
+        // Use the original filename (without extension) as the public_id so it
+        // stays human-readable in the Cloudinary Media Library.
+        public_id: `${Date.now()}-${originalName.replace(/\.[^/.]+$/, '')}`,
+        resource_type: 'auto', // handles PDFs, images, and raw files automatically
+      },
+      (error, result) => {
+        if (error || !result) return reject(error ?? new Error('Cloudinary upload failed'))
+        resolve({ secure_url: result.secure_url, public_id: result.public_id })
+      }
+    )
+
+    // Pipe the in-memory buffer into the Cloudinary upload stream
+    streamifier.createReadStream(buffer).pipe(uploadStream)
+  })
 }
 
 // ─── Windows-style duplicate title helpers ────────────────────────────────────
@@ -21,27 +72,23 @@ const splitExtension = (filename: string): [string, string] => {
 
 /**
  * Per-request cache: folderId (string) → Set of lowercase titles already in DB.
- * Loaded lazily on first access so we never hit the DB more than once per folder per request.
  */
 const loadFolderTitles = async (
   userId: string,
-  folderId: string,
+  folderId: string | null,
   cache: Map<string, Set<string>>
 ): Promise<Set<string>> => {
-  if (cache.has(folderId)) return cache.get(folderId)!
+  const folderKey = folderId ? String(folderId) : 'root'
+  if (cache.has(folderKey)) return cache.get(folderKey)!
 
   const existing = await DocumentModel.find({ user: userId, folder: folderId }).select('title')
   const titles = new Set<string>(existing.map((d: any) => d.title.toLowerCase()))
-  cache.set(folderId, titles)
+  cache.set(folderKey, titles)
   return titles
 }
 
 /**
- * Given a filename and the set of titles already taken in that folder
- * (DB titles + current batch titles), returns a unique Windows-style name.
- *
- * "report.pdf"    → "report(1).pdf"  when "report.pdf" is taken
- * "report(1).pdf" → "report(2).pdf"  when "report(1).pdf" is taken
+ * Returns a unique Windows-style name like "report(1).pdf".
  */
 const resolveUniqueTitle = (
   filename: string,
@@ -50,7 +97,6 @@ const resolveUniqueTitle = (
   if (!takenTitles.has(filename.toLowerCase())) return filename
 
   const [base, ext] = splitExtension(filename)
-  // Strip any existing trailing (N) so we always increment from a clean base
   const baseMatch = base.match(/^(.*?)\((\d+)\)$/)
   const cleanBase = baseMatch ? baseMatch[1] : base
 
@@ -112,13 +158,14 @@ export const uploadData = async (
     const folderCache = new Map<string, any>();
     const docsToInsert = [];
 
-    // dbTitleCache  : folderId → Set of titles already in DB (loaded once per folder per request)
-    // batchTitleCache: folderId → Set of titles already assigned in this batch (prevents intra-batch collisions)
+    // Caches for deduplication
     const dbTitleCache = new Map<string, Set<string>>();
     const batchTitleCache = new Map<string, Set<string>>();
 
     for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+      const file = files[i]
+
+      // ── Cognitive-load heuristic ────────────────────────────────────────
       const fileSizeMB = file.size / (1024 * 1024)
       let load: 'Light' | 'Medium' | 'Heavy' = 'Medium'
       if (fileSizeMB < 2) load = 'Light'
@@ -127,10 +174,18 @@ export const uploadData = async (
       const inferredType = getFileTypeFromMime(file.mimetype)
       const originalPath = parsedPaths[i] || `/${file.originalname}`
 
-      // 1. تنظيف المسار من النقطة (.)
-      const pathParts = originalPath.split('/').filter(p => p.trim() !== '' && p !== '.');
+      // ── Upload to Cloudinary ────────────────────────────────────────────
+      const cloudinaryFolder = getCloudinaryFolder(inferredType)
+      const { secure_url, public_id } = await uploadBufferToCloudinary(
+        file.buffer,
+        cloudinaryFolder,
+        file.originalname
+      )
 
-      // 2. حل ذكي لمسح اسم الملف
+      // ── Resolve Folder Tree ─────────────────────────────────────────────
+      const pathParts = originalPath.split('/').filter(p => p.trim() !== '' && p !== '.');
+      
+      // Strip filename from pathParts if it's there
       if (pathParts.length > 0) {
         const lastPart = pathParts[pathParts.length - 1];
         if (lastPart === file.originalname || lastPart.includes('.')) {
@@ -138,15 +193,11 @@ export const uploadData = async (
         }
       }
 
-      // 3. Individual files with no folder path sit at the root (folder: null)
-      //    — no virtual "Random files" folder is created.
-
       let currentParentId = null;
       let accumulatedPath = "";
 
       if (pathParts.length > 0) {
         const folderPathKey = pathParts.join('/');
-
         if (folderCache.has(folderPathKey)) {
           currentParentId = folderCache.get(folderPathKey);
         } else {
@@ -175,40 +226,35 @@ export const uploadData = async (
       }
 
       // ── Windows-style title deduplication ──────────────────────────────────
-      const folderKey = String(currentParentId)
-
-      // Load existing DB titles for this folder (result is cached after first query)
-      const dbTitles = await loadFolderTitles(userId, folderKey, dbTitleCache)
-
-      // Merge: DB titles + titles already reserved in this batch
+      const folderKey = currentParentId ? String(currentParentId) : 'root'
+      const dbTitles = await loadFolderTitles(userId, currentParentId, dbTitleCache)
       const batchTitles = batchTitleCache.get(folderKey) ?? new Set<string>()
       const allTaken = new Set<string>([...dbTitles, ...batchTitles])
 
-      // Find the next available Windows-style name
       const uniqueTitle = resolveUniqueTitle(file.originalname, allTaken)
-
-      // Reserve this title so the next file in the same batch won't collide
       batchTitles.add(uniqueTitle.toLowerCase())
       batchTitleCache.set(folderKey, batchTitles)
-      // ───────────────────────────────────────────────────────────────────────
 
+      // ── Stage for insertion ──────────────────────────────────────────────
       docsToInsert.push({
         user: userId,
-        title: uniqueTitle,           // ← guaranteed unique, Windows-style name
+        title: uniqueTitle,
         fileType: inferredType,
         aiStatus: 'Pending',
         cognitiveLoad: load,
-        originalFilePath: `/uploads/${file.filename}`,
+        cloudinaryUrl: secure_url,
+        cloudinaryPublicId: public_id,
         originalClientPath: originalPath,
         semanticPath: '/',
         folder: currentParentId,
-        tags: tags ? JSON.parse(tags) : []
+        tags: tags ? JSON.parse(tags) : [],
       })
     }
 
+    // Bulk-insert
     const createdDocs = await DocumentModel.insertMany(docsToInsert)
 
-    // 🚀 تحديث تاريخ المجلدات التي تم إضافة ملفات إليها للتو
+    // Update folder updatedAt dates
     const folderIdsToUpdate = [...new Set(docsToInsert.map(doc => doc.folder).filter(id => id !== null))];
     if (folderIdsToUpdate.length > 0) {
       await Folder.updateMany(

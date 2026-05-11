@@ -18,7 +18,10 @@ export interface IDocument extends Document {
   extractedText?: string
 
   // Storage & Organization
-  originalFilePath?: string
+
+  // ☁️ Cloudinary Storage
+  cloudinaryUrl?: string      // The public HTTPS URL served by Cloudinary
+  cloudinaryPublicId?: string // Used to delete/replace the asset on Cloudinary
 
   // --- 🛠️ UPGRADED: Relational Folder Architecture ---
   folder: mongoose.Types.ObjectId | null // Where it ACTUALLY lives right now (null = Root)
@@ -51,7 +54,9 @@ const documentSchema = new Schema<IDocument>(
     summary: { type: String },
     tags: { type: [String], default: [] },
     extractedText: { type: String },
-    originalFilePath: { type: String },
+    // ☁️ Cloudinary
+    cloudinaryUrl: { type: String },
+    cloudinaryPublicId: { type: String },
 
     // --- Relational & Semantic Paths ---
     folder: {

@@ -1,8 +1,18 @@
 import mongoose from 'mongoose'
-import fs from 'fs'
-import path from 'path'
 import Folder, { IFolder } from './folder.model'
 import { DocumentModel, IDocument } from '../documents/document.model'
+import { configureCloudinary } from '../../config/cloudinary'
+
+const cloudinary = configureCloudinary()
+
+/**
+ * Cloudinary stores images and PDFs under the 'image' resource type when uploaded with 'auto'.
+ * Word documents and others are stored as 'raw'.
+ * We must pass the correct resource_type to `destroy()` or the deletion silently fails.
+ */
+const getResourceType = (fileType: string): 'image' | 'raw' => {
+  return fileType === 'Image' || fileType === 'PDF' ? 'image' : 'raw'
+}
 
 export class FolderService {
   // 1. Create a Folder
@@ -181,12 +191,16 @@ export class FolderService {
       folder: { $in: folderIdsToDelete }
     })
 
-    for (const doc of documentsToDelete) {
-      if (doc.originalFilePath) {
-        const filePath = path.join(process.cwd(), doc.originalFilePath)
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
-      }
-    }
+    // ☁️ Delete each document's Cloudinary asset in parallel
+    await Promise.all(
+      documentsToDelete
+        .filter((doc) => doc.cloudinaryPublicId)
+        .map((doc) =>
+          cloudinary.uploader.destroy(doc.cloudinaryPublicId!, {
+            resource_type: getResourceType(doc.fileType),
+          })
+        )
+    )
 
     await DocumentModel.deleteMany({ user: userId, folder: { $in: folderIdsToDelete } })
     await Folder.deleteMany({ user: userId, _id: { $in: folderIdsToDelete } })

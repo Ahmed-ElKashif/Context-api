@@ -1,7 +1,17 @@
 import { DocumentModel, IDocument } from './document.model'
-import fs from 'fs'
-import path from 'path'
-import Folder from '../folders/folder.model' // 🛠️ THE FIX 1: Import the Folder model!
+import Folder from '../folders/folder.model'
+import { configureCloudinary } from '../../config/cloudinary'
+
+const cloudinary = configureCloudinary()
+
+/**
+ * Cloudinary stores images and PDFs under the 'image' resource type when uploaded with 'auto'.
+ * Word documents and others are stored as 'raw'.
+ * We must pass the correct resource_type to `destroy()` or the deletion silently fails.
+ */
+const getResourceType = (fileType: string): 'image' | 'raw' => {
+  return fileType === 'Image' || fileType === 'PDF' ? 'image' : 'raw'
+}
 
 export class DocumentService {
   // 1. Fetch All with Advanced Filters & Pagination
@@ -108,14 +118,17 @@ export class DocumentService {
     return await DocumentModel.bulkWrite(bulkOps)
   }
 
-  // 5. Delete Single Document & Physical File
+  // 5. Delete Single Document + Cloudinary Asset
   static async deleteById(userId: string, docId: string): Promise<boolean> {
     const document = await DocumentModel.findOne({ _id: docId, user: userId })
     if (!document) return false
 
-    if (document.originalFilePath) {
-      const filePath = path.join(process.cwd(), document.originalFilePath)
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+    // ☁️ Delete from Cloudinary if asset exists
+    if (document.cloudinaryPublicId) {
+      const resourceType = getResourceType(document.fileType)
+      await cloudinary.uploader.destroy(document.cloudinaryPublicId, {
+        resource_type: resourceType,
+      })
     }
 
     // 🛠️ Store the folder ID before we delete the document
@@ -131,20 +144,24 @@ export class DocumentService {
     return true
   }
 
-  // 6. Bulk Delete Documents & Physical Files
+  // 6. Bulk Delete Documents + Cloudinary Assets
   static async bulkDelete(userId: string, ids: string[]) {
     const query = { _id: { $in: ids }, user: userId }
     const documents = await DocumentModel.find(query)
 
+    // ☁️ Delete each asset from Cloudinary in parallel
+    await Promise.all(
+      documents
+        .filter((doc) => doc.cloudinaryPublicId)
+        .map((doc) =>
+          cloudinary.uploader.destroy(doc.cloudinaryPublicId!, {
+            resource_type: getResourceType(doc.fileType),
+          })
+        )
+    )
+
     // 🛠️ Collect all unique folder IDs that these documents belong to
     const folderIdsToUpdate = [...new Set(documents.map(doc => doc.folder).filter(id => id !== null))]
-
-    for (const doc of documents) {
-      if (doc.originalFilePath) {
-        const filePath = path.join(process.cwd(), doc.originalFilePath)
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
-      }
-    }
 
     const result = await DocumentModel.deleteMany(query)
 
@@ -164,14 +181,11 @@ export class DocumentService {
     return await DocumentModel.findOne({ _id: docId, user: userId }).populate('folder', 'name')
   }
 
-  // 8. Get Physical File Path for Streaming
+  // 8. Get Cloudinary URL for serving a file
+  // The controller can redirect to this URL or return it — no proxying needed.
   static async getFilePath(userId: string, docId: string): Promise<string | null> {
     const document = await DocumentModel.findOne({ _id: docId, user: userId })
-    if (!document || !document.originalFilePath) return null
-
-    const filePath = path.join(process.cwd(), document.originalFilePath)
-    if (!fs.existsSync(filePath)) return null
-
-    return filePath
+    if (!document || !document.cloudinaryUrl) return null
+    return document.cloudinaryUrl
   }
 }

@@ -212,6 +212,7 @@ export const getDocumentById = async (
 }
 
 // @route   GET /api/documents/:id/file
+// Redirects to the Cloudinary URL — the file is no longer stored locally.
 export const serveDocumentFile = async (
   req: Request,
   res: Response,
@@ -226,13 +227,15 @@ export const serveDocumentFile = async (
       return next(new AppError('Invalid document ID', 400))
     }
 
-    const filePath = await DocumentService.getFilePath(userId, id)
+    // getFilePath now returns the cloudinaryUrl
+    const cloudinaryUrl = await DocumentService.getFilePath(userId, id)
 
-    if (!filePath) {
-      return next(new AppError('Physical file is missing from the server or unauthorized', 404))
+    if (!cloudinaryUrl) {
+      return next(new AppError('File not found or unauthorized', 404))
     }
 
-    res.sendFile(filePath)
+    // 302 redirect: browser/client follows the URL directly to Cloudinary CDN
+    res.redirect(cloudinaryUrl)
   } catch (error) {
     next(error)
   }
