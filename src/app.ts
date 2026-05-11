@@ -55,8 +55,8 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'))
 }
 
-// Serve the uploads folder as static files
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')))
+// Serve the random files folder as static files
+app.use('/random files', express.static(path.join(process.cwd(), 'random files')))
 
 // ==========================================
 // 🚀 3. ROUTES

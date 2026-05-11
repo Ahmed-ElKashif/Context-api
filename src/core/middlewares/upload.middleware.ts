@@ -4,7 +4,7 @@ import fs from 'fs'
 import { AppError } from '../errors/AppError'
 
 // 1. Ensure the uploads directory exists
-const uploadDir = path.join(process.cwd(), 'uploads')
+const uploadDir = path.join(process.cwd(), 'random files')
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true })
 }
@@ -12,7 +12,7 @@ if (!fs.existsSync(uploadDir)) {
 // 2. Configure Storage Settings
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    // Tell Multer to save files in our root 'uploads' folder
+    // Tell Multer to save files in our root 'random files' folder
     cb(null, uploadDir)
   },
   filename: (req, file, cb) => {

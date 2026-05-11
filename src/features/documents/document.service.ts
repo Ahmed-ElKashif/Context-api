@@ -1,6 +1,7 @@
 import { DocumentModel, IDocument } from './document.model'
 import fs from 'fs'
 import path from 'path'
+import Folder from '../folders/folder.model' // 🛠️ THE FIX 1: Import the Folder model!
 
 export class DocumentService {
   // 1. Fetch All with Advanced Filters & Pagination
@@ -86,6 +87,12 @@ export class DocumentService {
     if (updateData.originalClientPath) document.originalClientPath = updateData.originalClientPath
 
     await document.save()
+
+    // 🛠️ THE FIX 2: Update the parent folder's timestamp when a document is edited!
+    if (document.folder) {
+      await Folder.findByIdAndUpdate(document.folder, { updatedAt: new Date() })
+    }
+
     return document
   }
 
@@ -111,7 +118,16 @@ export class DocumentService {
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
     }
 
+    // 🛠️ Store the folder ID before we delete the document
+    const folderId = document.folder;
+
     await document.deleteOne()
+
+    // 🛠️ THE FIX 3: Update the parent folder's timestamp when a document is deleted!
+    if (folderId) {
+      await Folder.findByIdAndUpdate(folderId, { updatedAt: new Date() })
+    }
+
     return true
   }
 
@@ -120,6 +136,9 @@ export class DocumentService {
     const query = { _id: { $in: ids }, user: userId }
     const documents = await DocumentModel.find(query)
 
+    // 🛠️ Collect all unique folder IDs that these documents belong to
+    const folderIdsToUpdate = [...new Set(documents.map(doc => doc.folder).filter(id => id !== null))]
+
     for (const doc of documents) {
       if (doc.originalFilePath) {
         const filePath = path.join(process.cwd(), doc.originalFilePath)
@@ -127,7 +146,17 @@ export class DocumentService {
       }
     }
 
-    return await DocumentModel.deleteMany(query)
+    const result = await DocumentModel.deleteMany(query)
+
+    // 🛠️ THE FIX 4: Update timestamps for all affected folders at once!
+    if (folderIdsToUpdate.length > 0) {
+      await Folder.updateMany(
+        { _id: { $in: folderIdsToUpdate } },
+        { $set: { updatedAt: new Date() } }
+      )
+    }
+
+    return result
   }
 
   // 7. Get Document by ID (Full payload)
