@@ -47,13 +47,16 @@ export class FolderService {
   }
 
   // 2. Get Folder Contents (🛠️ THE PAGINATION FIX)
+ // 2. Get Folder Contents (🛠️ THE PAGINATION FIX)
   static async getContents(
     userId: string,
     targetFolderId: string | null,
     skip: number,
     limit: number,
     search?: string,
-    tags?: string
+    tags?: string,
+    sortBy: string = 'updatedAt', // 🛠️ NEW: Accept sortBy
+    sortOrder: 1 | -1 = -1        // 🛠️ NEW: Accept sortOrder
   ): Promise<{
     currentFolder: IFolder | null
     breadcrumbs: IFolder[]
@@ -70,52 +73,52 @@ export class FolderService {
     ];
     if (tags) docQuery.tags = tags;
 
-    // 1. Get EXACT counts for both collections first
     const folderQuery = { user: userId, parentFolder: targetFolderId };
     const folderCount = (!search && !tags) ? await Folder.countDocuments(folderQuery) : 0;
     const documentCount = await DocumentModel.countDocuments(docQuery);
-    
-    // 2. The true combined total for your frontend UI
     const totalDocuments = folderCount + documentCount;
 
     let folders: IFolder[] = [];
     let documents: IDocument[] = [];
 
-    // 3. 🧠 THE SMART PAGINATION LOGIC
+    // 🛠️ THE FIX: Smart Sorting Objects!
+    // Folders use 'name' instead of 'title', but pinned folders always stay at the top!
+    const folderSortField = sortBy === 'title' ? 'name' : sortBy;
+    const folderSortOptions: any = { isPinned: -1, [folderSortField]: sortOrder };
+    
+    // Documents use whatever the frontend sends
+    const docSortOptions: any = { [sortBy]: sortOrder };
+
     if (!search && !tags) {
       if (skip < folderCount) {
-        // SCENARIO A: We are still paginating through folders
         const folderLimit = Math.min(limit, folderCount - skip);
         folders = await Folder.find(folderQuery)
-          .sort({ name: 1 })
+          .sort(folderSortOptions) // 🛠️ Applied here!
           .skip(skip)
           .limit(folderLimit);
 
-        // Do we have extra space on this page to start showing documents?
         const remainingSpace = limit - folders.length;
         if (remainingSpace > 0) {
           documents = await DocumentModel.find(docQuery)
-            .sort({ updatedAt: -1 })
-            .skip(0) // Start at the very first document
+            .sort(docSortOptions) // 🛠️ Applied here!
+            .skip(0) 
             .limit(remainingSpace);
         }
       } else {
-        // SCENARIO B: We have skipped past all the folders. ONLY fetch documents.
         const docSkip = skip - folderCount;
         documents = await DocumentModel.find(docQuery)
-          .sort({ updatedAt: -1 })
+          .sort(docSortOptions) // 🛠️ Applied here!
           .skip(docSkip)
           .limit(limit);
       }
     } else {
-      // SCENARIO C: If searching/filtering, we are only looking at documents
       documents = await DocumentModel.find(docQuery)
-        .sort({ updatedAt: -1 })
+        .sort(docSortOptions) // 🛠️ Applied here!
         .skip(skip)
         .limit(limit);
     }
 
-    // 4. Breadcrumbs logic
+    // 4. Breadcrumbs logic (unchanged)
     let currentFolder: IFolder | null = null
     let breadcrumbs: IFolder[] = []
 
@@ -141,7 +144,6 @@ export class FolderService {
 
     return { currentFolder, breadcrumbs, folders, documents, totalDocuments }
   }
-
   // 3. Rename a Folder
   static async renameFolder(
     userId: string,
@@ -162,6 +164,7 @@ export class FolderService {
     const oldName = folder.name
     folder.name = newName
     folder.path = folder.path.replace(new RegExp(`${oldName}$`), newName)
+    folder.updatedAt = new Date(); // 🛠️ Explicitly force the timestamp to update
 
     await folder.save()
     return { folder }
@@ -203,7 +206,7 @@ export class FolderService {
     await Folder.deleteMany({ user: userId, _id: { $in: folderIdsToDelete } })
 
     return {
-      foldersDeleted: foldersToDelete.length,
+      foldersd: foldersToDelete.length,
       documentsDeleted: documentsToDelete.length
     }
   }

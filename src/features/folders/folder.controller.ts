@@ -35,11 +35,11 @@ export const getFolderContents = async (
     const userId = req.user?._id?.toString() || (req as any).user?.id
     if (!userId) return next(new AppError('Unauthorized', 401))
 
-   // 🛠️ THE FIX: Explicitly cast folderId as a string
-const folderId = req.params.folderId as string;
+    // 🛠️ Explicitly cast folderId as a string
+    const folderId = req.params.folderId as string;
 
-const isRoot = !folderId || folderId === 'root';
-const targetFolderId = isRoot ? null : folderId;
+    const isRoot = !folderId || folderId === 'root';
+    const targetFolderId = isRoot ? null : folderId;
 
     const page = parseInt(req.query.page as string, 10) || 1
     const limit = parseInt(req.query.limit as string, 10) || 10
@@ -49,14 +49,21 @@ const targetFolderId = isRoot ? null : folderId;
     const search = req.query.search as string;
     const tags = req.query.tags as string;
 
-    // 🛠️ THE FIX: Pass the search and tags down to the service!
+    // 🛠️ THE ROBUST FIX: Extract sorting variables and enforce 1 or -1
+    const sortBy = (req.query.sortBy as string) || 'updatedAt';
+    const rawSortOrder = String(req.query.sortOrder).toLowerCase();
+    const sortOrder = (rawSortOrder === 'asc' || rawSortOrder === '1') ? 1 : -1;
+
+    // 🛠️ Pass EVERYTHING down to the service!
     const result = await FolderService.getContents(
       userId, 
       targetFolderId,
       skip, 
       limit, 
       search, 
-      tags
+      tags,
+      sortBy,
+      sortOrder
     );
 
     res.status(200).json({

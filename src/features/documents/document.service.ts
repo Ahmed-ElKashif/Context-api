@@ -1,4 +1,5 @@
 import { DocumentModel, IDocument } from './document.model'
+import Folder from '../folders/folder.model'
 import { configureCloudinary } from '../../config/cloudinary'
 
 const cloudinary = configureCloudinary()
@@ -96,6 +97,12 @@ export class DocumentService {
     if (updateData.originalClientPath) document.originalClientPath = updateData.originalClientPath
 
     await document.save()
+
+    // 🛠️ THE FIX 2: Update the parent folder's timestamp when a document is edited!
+    if (document.folder) {
+      await Folder.findByIdAndUpdate(document.folder, { updatedAt: new Date() })
+    }
+
     return document
   }
 
@@ -124,7 +131,16 @@ export class DocumentService {
       })
     }
 
+    // 🛠️ Store the folder ID before we delete the document
+    const folderId = document.folder;
+
     await document.deleteOne()
+
+    // 🛠️ THE FIX 3: Update the parent folder's timestamp when a document is deleted!
+    if (folderId) {
+      await Folder.findByIdAndUpdate(folderId, { updatedAt: new Date() })
+    }
+
     return true
   }
 
@@ -144,7 +160,20 @@ export class DocumentService {
         )
     )
 
-    return await DocumentModel.deleteMany(query)
+    // 🛠️ Collect all unique folder IDs that these documents belong to
+    const folderIdsToUpdate = [...new Set(documents.map(doc => doc.folder).filter(id => id !== null))]
+
+    const result = await DocumentModel.deleteMany(query)
+
+    // 🛠️ THE FIX 4: Update timestamps for all affected folders at once!
+    if (folderIdsToUpdate.length > 0) {
+      await Folder.updateMany(
+        { _id: { $in: folderIdsToUpdate } },
+        { $set: { updatedAt: new Date() } }
+      )
+    }
+
+    return result
   }
 
   // 7. Get Document by ID (Full payload)
