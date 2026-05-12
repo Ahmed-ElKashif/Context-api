@@ -5,6 +5,7 @@ export interface IFolder extends Document {
   user: mongoose.Types.ObjectId;
   parentFolder: mongoose.Types.ObjectId | null;
   path: string; // Used for quick breadcrumbs (e.g., "Projects/Q4")
+  isPinned: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,7 +30,12 @@ const FolderSchema: Schema = new Schema(
     path: { 
       type: String, 
       default: "" 
-    },
+    }, 
+    // to make random file in the top of the list 
+    isPinned: { 
+  type: Boolean, 
+  default: false 
+}, 
   },
   { 
     timestamps: true 

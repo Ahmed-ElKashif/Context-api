@@ -1,8 +1,18 @@
 import mongoose from 'mongoose'
-import fs from 'fs'
-import path from 'path'
 import Folder, { IFolder } from './folder.model'
 import { DocumentModel, IDocument } from '../documents/document.model'
+import { configureCloudinary } from '../../config/cloudinary'
+
+const cloudinary = configureCloudinary()
+
+/**
+ * Cloudinary stores images and PDFs under the 'image' resource type when uploaded with 'auto'.
+ * Word documents and others are stored as 'raw'.
+ * We must pass the correct resource_type to `destroy()` or the deletion silently fails.
+ */
+const getResourceType = (fileType: string): 'image' | 'raw' => {
+  return fileType === 'Image' || fileType === 'PDF' ? 'image' : 'raw'
+}
 
 export class FolderService {
   // 1. Create a Folder
@@ -36,14 +46,17 @@ export class FolderService {
     return { folder }
   }
 
-  // 2. Get Folder Contents (🛠️ FIX: Added Search & Tags parameters)
+  // 2. Get Folder Contents (🛠️ THE PAGINATION FIX)
+ // 2. Get Folder Contents (🛠️ THE PAGINATION FIX)
   static async getContents(
     userId: string,
     targetFolderId: string | null,
     skip: number,
     limit: number,
     search?: string,
-    tags?: string
+    tags?: string,
+    sortBy: string = 'updatedAt', // 🛠️ NEW: Accept sortBy
+    sortOrder: 1 | -1 = -1        // 🛠️ NEW: Accept sortOrder
   ): Promise<{
     currentFolder: IFolder | null
     breadcrumbs: IFolder[]
@@ -52,45 +65,60 @@ export class FolderService {
     totalDocuments: number
   }> {
     
-    // --- 🛠️ THE FIX: BUILD A DYNAMIC QUERY ---
     let docQuery: any = { user: userId };
+    if (!search && !tags) docQuery.folder = targetFolderId;
+    if (search) docQuery.$or = [
+      { title: { $regex: search, $options: 'i' } },
+      { tags: { $regex: search, $options: 'i' } }
+    ];
+    if (tags) docQuery.tags = tags;
 
-    // If we are NOT searching globally, restrict files to the current folder
-    if (!search && !tags) {
-      docQuery.folder = targetFolderId;
-    }
+    const folderQuery = { user: userId, parentFolder: targetFolderId };
+    const folderCount = (!search && !tags) ? await Folder.countDocuments(folderQuery) : 0;
+    const documentCount = await DocumentModel.countDocuments(docQuery);
+    const totalDocuments = folderCount + documentCount;
 
-    // If there is a search term, use Regex to match the title or tags (case-insensitive)
-    if (search) {
-      docQuery.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { tags: { $regex: search, $options: 'i' } }
-      ];
-    }
-
-    // If a tag filter is active, require that tag
-    if (tags) {
-      docQuery.tags = tags;
-    }
-
-    // 1. Fetch Folders (We only need to fetch folders if we aren't searching)
     let folders: IFolder[] = [];
+    let documents: IDocument[] = [];
+
+    // 🛠️ THE FIX: Smart Sorting Objects!
+    // Folders use 'name' instead of 'title', but pinned folders always stay at the top!
+    const folderSortField = sortBy === 'title' ? 'name' : sortBy;
+    const folderSortOptions: any = { isPinned: -1, [folderSortField]: sortOrder };
+    
+    // Documents use whatever the frontend sends
+    const docSortOptions: any = { [sortBy]: sortOrder };
+
     if (!search && !tags) {
-      folders = await Folder.find({ user: userId, parentFolder: targetFolderId }).sort({
-        name: 1
-      });
+      if (skip < folderCount) {
+        const folderLimit = Math.min(limit, folderCount - skip);
+        folders = await Folder.find(folderQuery)
+          .sort(folderSortOptions) // 🛠️ Applied here!
+          .skip(skip)
+          .limit(folderLimit);
+
+        const remainingSpace = limit - folders.length;
+        if (remainingSpace > 0) {
+          documents = await DocumentModel.find(docQuery)
+            .sort(docSortOptions) // 🛠️ Applied here!
+            .skip(0) 
+            .limit(remainingSpace);
+        }
+      } else {
+        const docSkip = skip - folderCount;
+        documents = await DocumentModel.find(docQuery)
+          .sort(docSortOptions) // 🛠️ Applied here!
+          .skip(docSkip)
+          .limit(limit);
+      }
+    } else {
+      documents = await DocumentModel.find(docQuery)
+        .sort(docSortOptions) // 🛠️ Applied here!
+        .skip(skip)
+        .limit(limit);
     }
 
-    // 2. Fetch Documents (Using our new dynamic docQuery!)
-    const documents = await DocumentModel.find(docQuery)
-      .sort({ updatedAt: -1 })
-      .skip(skip)
-      .limit(limit)
-
-    // 3. Count total documents for pagination
-    const totalDocuments = await DocumentModel.countDocuments(docQuery)
-
-    // 4. Breadcrumbs logic
+    // 4. Breadcrumbs logic (unchanged)
     let currentFolder: IFolder | null = null
     let breadcrumbs: IFolder[] = []
 
@@ -116,7 +144,6 @@ export class FolderService {
 
     return { currentFolder, breadcrumbs, folders, documents, totalDocuments }
   }
-
   // 3. Rename a Folder
   static async renameFolder(
     userId: string,
@@ -137,6 +164,7 @@ export class FolderService {
     const oldName = folder.name
     folder.name = newName
     folder.path = folder.path.replace(new RegExp(`${oldName}$`), newName)
+    folder.updatedAt = new Date(); // 🛠️ Explicitly force the timestamp to update
 
     await folder.save()
     return { folder }
@@ -163,18 +191,22 @@ export class FolderService {
       folder: { $in: folderIdsToDelete }
     })
 
-    for (const doc of documentsToDelete) {
-      if (doc.originalFilePath) {
-        const filePath = path.join(process.cwd(), doc.originalFilePath)
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
-      }
-    }
+    // ☁️ Delete each document's Cloudinary asset in parallel
+    await Promise.all(
+      documentsToDelete
+        .filter((doc) => doc.cloudinaryPublicId)
+        .map((doc) =>
+          cloudinary.uploader.destroy(doc.cloudinaryPublicId!, {
+            resource_type: getResourceType(doc.fileType),
+          })
+        )
+    )
 
     await DocumentModel.deleteMany({ user: userId, folder: { $in: folderIdsToDelete } })
     await Folder.deleteMany({ user: userId, _id: { $in: folderIdsToDelete } })
 
     return {
-      foldersDeleted: foldersToDelete.length,
+      foldersd: foldersToDelete.length,
       documentsDeleted: documentsToDelete.length
     }
   }

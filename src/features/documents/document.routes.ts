@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { protect } from '../../core/middlewares/auth.middleware'
 import { validate } from '../../core/middlewares/validate.middleware' // 🛠️ NEW: Zod Validation Middleware
-import { upload } from '../../core/middlewares/upload.middleware'
+import { uploadMemory } from '../../core/middlewares/upload.middleware'
 import { uploadData } from './upload.controller'
 
 // 🛠️ NEW: Import your Zod Schemas
@@ -34,7 +34,7 @@ router.use(protect)
 
 // Route: POST /api/documents/upload
 // Upgraded to handle batch uploads! Expects an array of files under the key 'files' (max 10)
-router.post('/upload', upload.array('files', 10), uploadData)
+router.post('/upload', uploadMemory.array('files', 10), uploadData)
 
 // Route: GET /api/documents
 router.get('/', getAllDocuments)

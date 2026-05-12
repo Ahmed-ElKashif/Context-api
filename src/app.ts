@@ -4,7 +4,6 @@ import helmet from 'helmet'
 import morgan from 'morgan'
 import rateLimit from 'express-rate-limit'
 
-import path from 'path'
 
 import { AppError } from './core/errors/AppError'
 import { globalErrorHandler } from './core/middlewares/error.middleware'
@@ -28,7 +27,7 @@ app.use(
   cors({
     origin: process.env.FRONTEND_URL || 'http://localhost:5173', // Only allow your frontend to talk to this API
     credentials: true, // Allow cookies/tokens to be sent
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH']
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS']
   })
 )
 
@@ -55,8 +54,6 @@ if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'))
 }
 
-// Serve the uploads folder as static files
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')))
 
 // ==========================================
 // 🚀 3. ROUTES
