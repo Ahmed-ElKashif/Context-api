@@ -1,4 +1,3 @@
-// 🛠️ THE FIX: This specific import syntax executes IMMEDIATELY, before anything else!
 import 'dotenv/config'
 import app from './app'
 import { connectDB } from './config/db'

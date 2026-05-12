@@ -17,11 +17,11 @@ export interface IDocument extends Document {
   tags: string[]
   extractedText?: string
 
-  // 🧠 NEW: The 1536-dimensional vector array from OpenAI
-  embedding?: number[]
-
   // Storage & Organization
-  originalFilePath?: string
+
+  // ☁️ Cloudinary Storage
+  cloudinaryUrl?: string      // The public HTTPS URL served by Cloudinary
+  cloudinaryPublicId?: string // Used to delete/replace the asset on Cloudinary
 
   // --- 🛠️ UPGRADED: Relational Folder Architecture ---
   folder: mongoose.Types.ObjectId | null // Where it ACTUALLY lives right now (null = Root)
@@ -54,14 +54,9 @@ const documentSchema = new Schema<IDocument>(
     summary: { type: String },
     tags: { type: [String], default: [] },
     extractedText: { type: String },
-
-    // 🧠 NEW: Vector Embedding Storage
-    // select: false ensures we don't accidentally send 1536 numbers to the frontend on every request!
-    embedding: {
-      type: [Number],
-      select: false
-    },
-    originalFilePath: { type: String },
+    // ☁️ Cloudinary
+    cloudinaryUrl: { type: String },
+    cloudinaryPublicId: { type: String },
 
     // --- Relational & Semantic Paths ---
     folder: {
