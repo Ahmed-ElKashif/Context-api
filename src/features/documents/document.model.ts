@@ -17,6 +17,9 @@ export interface IDocument extends Document {
   tags: string[]
   extractedText?: string
 
+  // 🧠 NEW: The 1536-dimensional vector array from OpenAI
+  embedding?: number[]
+
   // Storage & Organization
   originalFilePath?: string
 
@@ -51,6 +54,13 @@ const documentSchema = new Schema<IDocument>(
     summary: { type: String },
     tags: { type: [String], default: [] },
     extractedText: { type: String },
+
+    // 🧠 NEW: Vector Embedding Storage
+    // select: false ensures we don't accidentally send 1536 numbers to the frontend on every request!
+    embedding: {
+      type: [Number],
+      select: false
+    },
     originalFilePath: { type: String },
 
     // --- Relational & Semantic Paths ---

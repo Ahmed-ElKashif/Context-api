@@ -1,9 +1,7 @@
-import dotenv from 'dotenv'
+// 🛠️ THE FIX: This specific import syntax executes IMMEDIATELY, before anything else!
+import 'dotenv/config'
 import app from './app'
 import { connectDB } from './config/db'
-
-// Load .env variables first
-dotenv.config()
 
 // Connect to MongoDB
 connectDB()

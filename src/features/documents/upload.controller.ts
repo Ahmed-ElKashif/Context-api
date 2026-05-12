@@ -1,14 +1,15 @@
 import { Request, Response, NextFunction } from 'express'
 import { DocumentModel, DocumentType } from './document.model'
 import { AppError } from '../../core/errors/AppError'
-import Folder, { IFolder } from '../folders/folder.model';  
+import Folder, { IFolder } from '../folders/folder.model'
+//  NEW: Import the AI Brain
+import { AIService } from '../ai/ai.service'
 
-// Helper function to map Multer's mimetype to your MVP DocumentType
 const getFileTypeFromMime = (mimeType: string): DocumentType => {
   if (mimeType.includes('pdf')) return 'PDF'
   if (mimeType.includes('word') || mimeType.includes('officedocument')) return 'Word'
   if (mimeType.includes('image')) return 'Image'
-  return 'TextSnippet' // Fallback
+  return 'TextSnippet'
 }
 
 export const uploadData = async (
@@ -17,27 +18,30 @@ export const uploadData = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    // 1. Get the user ID from the protected route middleware
     const userId = (req as any).user._id
     const { title, fileType, extractedText, tags, clientPaths } = req.body
 
-    // --- FLOW A: Text Snippets (No physical file, just raw text) ---
+    // --- FLOW A: Text Snippets ---
     if (fileType === 'TextSnippet') {
       if (!extractedText) {
         return next(new AppError('extractedText is required for TextSnippets', 400))
       }
 
+      //  AI INJECTION 1: Generate the vector embedding instantly since it's just raw text
+      const embedding = await AIService.generateEmbedding(extractedText)
+
       const snippet = await DocumentModel.create({
         user: userId,
         title: title || `Snippet: ${extractedText.substring(0, 20)}...`,
         fileType,
-        aiStatus: 'Analyzed',
+        aiStatus: 'Analyzed', // It's text, so it's instantly analyzed
         cognitiveLoad: 'Light',
         extractedText,
+        embedding, //  Save the 1536 vector array to the database
         tags: tags ? JSON.parse(tags) : [],
         originalClientPath: '/',
         semanticPath: '/',
-        folder: null // 🛠️ NEW: Explicitly sits at the root
+        folder: null
       })
 
       res.status(201).json({ success: true, count: 1, data: [snippet] })
@@ -56,14 +60,11 @@ export const uploadData = async (
       parsedPaths = Array.isArray(clientPaths) ? clientPaths : [clientPaths]
     }
 
-    // 🛠️ NEW: In-Memory Cache. 
-    // Prevents creating the same folder 5 times if 5 files are in the same directory!
-    const folderCache = new Map<string, any>();
-    const docsToInsert = [];
+    const folderCache = new Map<string, any>()
+    const docsToInsert = []
 
-    // 2. Loop through files sequentially so we can build the folder tree safely
     for (let i = 0; i < files.length; i++) {
-      const file = files[i];
+      const file = files[i]
       const fileSizeMB = file.size / (1024 * 1024)
       let load: 'Light' | 'Medium' | 'Heavy' = 'Medium'
       if (fileSizeMB < 2) load = 'Light'
@@ -72,68 +73,68 @@ export const uploadData = async (
       const inferredType = getFileTypeFromMime(file.mimetype)
       const originalPath = parsedPaths[i] || `/${file.originalname}`
 
-      // --- 🛠️ THE UPGRADE: VIRTUAL TO PHYSICAL FOLDERS ---
-      // Split "Q4/Invoices/invoice.pdf" -> ["Q4", "Invoices", "invoice.pdf"]
-      const pathParts = originalPath.split('/').filter(p => p.trim() !== '');
-      
-      // Remove the filename from the path parts (we only want the folders)
+      const pathParts = originalPath.split('/').filter((p) => p.trim() !== '')
+
       if (pathParts.length > 0 && pathParts[pathParts.length - 1] === file.originalname) {
-        pathParts.pop(); 
+        pathParts.pop()
       }
 
-      let currentParentId = null;
-      let accumulatedPath = "";
+      let currentParentId = null
+      let accumulatedPath = ''
 
-      // If there are actually folders to create (e.g., they didn't just upload a loose file)
       if (pathParts.length > 0) {
-        const folderPathKey = pathParts.join('/'); // e.g., "Q4/Invoices"
+        const folderPathKey = pathParts.join('/')
 
-        // Check if we already created this folder during THIS specific upload loop
         if (folderCache.has(folderPathKey)) {
-          currentParentId = folderCache.get(folderPathKey);
+          currentParentId = folderCache.get(folderPathKey)
         } else {
-          // If not in cache, crawl down the path and create them in MongoDB
           for (const part of pathParts) {
-            accumulatedPath = accumulatedPath ? `${accumulatedPath}/${part}` : part;
+            accumulatedPath = accumulatedPath ? `${accumulatedPath}/${part}` : part
 
-            let folder : IFolder | null = await Folder.findOne({ 
-              name: part, 
-              user: userId, 
-              parentFolder: currentParentId 
-            });
+            let folder: IFolder | null = await Folder.findOne({
+              name: part,
+              user: userId,
+              parentFolder: currentParentId
+            })
 
             if (!folder) {
-              folder = await Folder.create({ 
-                name: part, 
-                user: userId, 
-                parentFolder: currentParentId, 
-                path: accumulatedPath 
-              });
+              folder = await Folder.create({
+                name: part,
+                user: userId,
+                parentFolder: currentParentId,
+                path: accumulatedPath
+              })
             }
-            currentParentId = folder._id;
+            currentParentId = folder._id
           }
-          // Save the final deepest folder ID to our cache for the next file!
-          folderCache.set(folderPathKey, currentParentId);
+          folderCache.set(folderPathKey, currentParentId)
         }
       }
 
-      // Add the fully mapped document to our insert array
       docsToInsert.push({
         user: userId,
         title: file.originalname,
         fileType: inferredType,
-        aiStatus: 'Pending',
+        aiStatus: 'Pending', //  Leaves as pending for the background worker
         cognitiveLoad: load,
         originalFilePath: `/uploads/${file.filename}`,
-        originalClientPath: originalPath, 
-        semanticPath: '/', 
-        folder: currentParentId, // 🛠️ NEW: Connect to the physical Folder!
+        originalClientPath: originalPath,
+        semanticPath: '/',
+        folder: currentParentId,
         tags: tags ? JSON.parse(tags) : []
       })
     }
 
-    // 3. Blazing fast bulk insert into MongoDB
+    // Blazing fast bulk insert into MongoDB
     const createdDocs = await DocumentModel.insertMany(docsToInsert)
+
+    //  AI INJECTION 2: FIRE AND FORGET!
+    // We grab the new IDs and send them to the AI worker.
+    // Notice there is NO 'await' here. The server responds to the user instantly!
+    const docIds = createdDocs.map((doc) => doc._id.toString())
+    AIService.processPendingDocuments(docIds).catch((err) => {
+      console.error('Background AI processing failed:', err)
+    })
 
     res.status(201).json({ success: true, count: createdDocs.length, data: createdDocs })
   } catch (error) {
