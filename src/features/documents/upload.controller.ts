@@ -193,6 +193,12 @@ export const uploadData = async (
         }
       }
 
+      // Individual files with no folder path go into the pinned "Random files" virtual folder.
+      // Storage is still in Cloudinary — this is only the MongoDB organizational folder.
+      if (pathParts.length === 0) {
+        pathParts.push('Random files');
+      }
+
       let currentParentId = null;
       let accumulatedPath = "";
 
@@ -216,8 +222,11 @@ export const uploadData = async (
                 user: userId,
                 parentFolder: currentParentId,
                 path: accumulatedPath,
-                isPinned: false
+                isPinned: part === 'Random files'   // pin the Random files folder
               });
+            } else if (part === 'Random files' && !folder.isPinned) {
+              // Ensure the existing Random files folder is pinned
+              await Folder.findByIdAndUpdate(folder._id, { isPinned: true });
             }
             currentParentId = folder._id;
           }
