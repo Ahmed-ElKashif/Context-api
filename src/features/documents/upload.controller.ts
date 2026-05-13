@@ -4,6 +4,7 @@ import { AppError } from '../../core/errors/AppError'
 import Folder, { IFolder } from '../folders/folder.model'
 import { configureCloudinary } from '../../config/cloudinary'
 import streamifier from 'streamifier'
+import { AIService } from '../ai/ai.service'
 
 // Ensure Cloudinary is configured
 const cloudinary = configureCloudinary()
@@ -25,10 +26,14 @@ const getFileTypeFromMime = (mimeType: string): DocumentType => {
  */
 const getCloudinaryFolder = (docType: DocumentType): string => {
   switch (docType) {
-    case 'PDF': return 'documents/pdf'
-    case 'Image': return 'documents/images'
-    case 'Word': return 'documents/word'
-    default: return 'documents/other'
+    case 'PDF':
+      return 'documents/pdf'
+    case 'Image':
+      return 'documents/images'
+    case 'Word':
+      return 'documents/word'
+    default:
+      return 'documents/other'
   }
 }
 
@@ -48,7 +53,7 @@ const uploadBufferToCloudinary = (
         // Use the original filename (without extension) as the public_id so it
         // stays human-readable in the Cloudinary Media Library.
         public_id: `${Date.now()}-${originalName.replace(/\.[^/.]+$/, '')}`,
-        resource_type: 'auto', // handles PDFs, images, and raw files automatically
+        resource_type: 'auto' // handles PDFs, images, and raw files automatically
       },
       (error, result) => {
         if (error || !result) return reject(error ?? new Error('Cloudinary upload failed'))
@@ -90,10 +95,7 @@ const loadFolderTitles = async (
 /**
  * Returns a unique Windows-style name like "report(1).pdf".
  */
-const resolveUniqueTitle = (
-  filename: string,
-  takenTitles: Set<string>
-): string => {
+const resolveUniqueTitle = (filename: string, takenTitles: Set<string>): string => {
   if (!takenTitles.has(filename.toLowerCase())) return filename
 
   const [base, ext] = splitExtension(filename)
@@ -155,12 +157,12 @@ export const uploadData = async (
       parsedPaths = Array.isArray(clientPaths) ? clientPaths : [clientPaths]
     }
 
-    const folderCache = new Map<string, any>();
-    const docsToInsert = [];
+    const folderCache = new Map<string, any>()
+    const docsToInsert = []
 
     // Caches for deduplication
-    const dbTitleCache = new Map<string, Set<string>>();
-    const batchTitleCache = new Map<string, Set<string>>();
+    const dbTitleCache = new Map<string, Set<string>>()
+    const batchTitleCache = new Map<string, Set<string>>()
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
@@ -183,38 +185,38 @@ export const uploadData = async (
       )
 
       // ── Resolve Folder Tree ─────────────────────────────────────────────
-      const pathParts = originalPath.split('/').filter(p => p.trim() !== '' && p !== '.');
-      
+      const pathParts = originalPath.split('/').filter((p) => p.trim() !== '' && p !== '.')
+
       // Strip filename from pathParts if it's there
       if (pathParts.length > 0) {
-        const lastPart = pathParts[pathParts.length - 1];
+        const lastPart = pathParts[pathParts.length - 1]
         if (lastPart === file.originalname || lastPart.includes('.')) {
-          pathParts.pop();
+          pathParts.pop()
         }
       }
 
       // Individual files with no folder path go into the pinned "Random files" virtual folder.
       // Storage is still in Cloudinary — this is only the MongoDB organizational folder.
       if (pathParts.length === 0) {
-        pathParts.push('Random files');
+        pathParts.push('Random files')
       }
 
-      let currentParentId = null;
-      let accumulatedPath = "";
+      let currentParentId = null
+      let accumulatedPath = ''
 
       if (pathParts.length > 0) {
-        const folderPathKey = pathParts.join('/');
+        const folderPathKey = pathParts.join('/')
         if (folderCache.has(folderPathKey)) {
-          currentParentId = folderCache.get(folderPathKey);
+          currentParentId = folderCache.get(folderPathKey)
         } else {
           for (const part of pathParts) {
-            accumulatedPath = accumulatedPath ? `${accumulatedPath}/${part}` : part;
+            accumulatedPath = accumulatedPath ? `${accumulatedPath}/${part}` : part
 
             let folder: IFolder | null = await Folder.findOne({
               name: part,
               user: userId,
               parentFolder: currentParentId
-            });
+            })
 
             if (!folder) {
               folder = await Folder.create({
@@ -222,15 +224,15 @@ export const uploadData = async (
                 user: userId,
                 parentFolder: currentParentId,
                 path: accumulatedPath,
-                isPinned: part === 'Random files'   // pin the Random files folder
-              });
+                isPinned: part === 'Random files' // pin the Random files folder
+              })
             } else if (part === 'Random files' && !folder.isPinned) {
               // Ensure the existing Random files folder is pinned
-              await Folder.findByIdAndUpdate(folder._id, { isPinned: true });
+              await Folder.findByIdAndUpdate(folder._id, { isPinned: true })
             }
-            currentParentId = folder._id;
+            currentParentId = folder._id
           }
-          folderCache.set(folderPathKey, currentParentId);
+          folderCache.set(folderPathKey, currentParentId)
         }
       }
 
@@ -256,7 +258,7 @@ export const uploadData = async (
         originalClientPath: originalPath,
         semanticPath: '/',
         folder: currentParentId,
-        tags: tags ? JSON.parse(tags) : [],
+        tags: tags ? JSON.parse(tags) : []
       })
     }
 
@@ -264,13 +266,23 @@ export const uploadData = async (
     const createdDocs = await DocumentModel.insertMany(docsToInsert)
 
     // Update folder updatedAt dates
-    const folderIdsToUpdate = [...new Set(docsToInsert.map(doc => doc.folder).filter(id => id !== null))];
+    const folderIdsToUpdate = [
+      ...new Set(docsToInsert.map((doc) => doc.folder).filter((id) => id !== null))
+    ]
     if (folderIdsToUpdate.length > 0) {
       await Folder.updateMany(
         { _id: { $in: folderIdsToUpdate } },
         { $set: { updatedAt: new Date() } }
-      );
+      )
     }
+
+    // ==========================================
+    // RESTORED AI TRIGGER (FIRE AND FORGET)
+    // ==========================================
+    const docIds = createdDocs.map((doc) => doc._id.toString())
+    AIService.processPendingDocuments(docIds).catch((err) => {
+      console.error('Background AI processing failed:', err)
+    })
 
     res.status(201).json({ success: true, count: createdDocs.length, data: createdDocs })
   } catch (error) {

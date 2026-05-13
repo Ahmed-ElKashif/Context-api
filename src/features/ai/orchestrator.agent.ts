@@ -3,6 +3,7 @@ import { tool } from '@langchain/core/tools'
 import { initChatModel } from 'langchain/chat_models/universal'
 import { createReactAgent } from '@langchain/langgraph/prebuilt'
 import { HumanMessage, SystemMessage, isAIMessage } from '@langchain/core/messages'
+import { MemorySaver } from '@langchain/langgraph'
 
 /**
  * @description Defines the output structure expected from the Orchestrator Agent.
@@ -15,6 +16,14 @@ export interface DocumentMetadata {
 }
 
 export class OrchestratorAgent {
+  // ==========================================
+  // STATE MANAGEMENT
+  // ==========================================
+
+  // Initialize the LangGraph Checkpointer
+  // This persists the agent's memory state per-document upload
+  private static checkpointer = new MemorySaver()
+
   // ==========================================
   // TOOL DEFINITIONS
   // ==========================================
@@ -71,11 +80,14 @@ export class OrchestratorAgent {
 
   /**
    * Invokes the GPT-4o-mini Orchestrator to analyze document text and extract structured metadata.
-   * Forces the model to use the defined tools to guarantee type safety via Zod.
+   * Requires documentId to assign a unique thread to the LangGraph MemorySaver.
    */
-  public static async analyzeDocumentMetadata(textPreview: string): Promise<DocumentMetadata> {
+  public static async analyzeDocumentMetadata(
+    documentId: string,
+    textPreview: string
+  ): Promise<DocumentMetadata> {
     const model = await initChatModel('gpt-4o-mini', {
-      temperature: 0.2, // Low temperature for consistent categorization
+      temperature: 0.2,
       maxTokens: 1000
     })
 
@@ -94,18 +106,44 @@ export class OrchestratorAgent {
       Do not skip any tools. Do not ask follow-up questions.
     `)
 
+    // Bind the tools and the checkpointer to the LangGraph ReAct agent
     const agent = createReactAgent({
       llm: model,
-      tools: tools
+      tools: tools,
+      checkpointSaver: this.checkpointer
     })
 
-    // Execute the agent workflow
-    const response = await agent.invoke({
-      messages: [
-        systemPrompt,
-        new HumanMessage(`Analyze the following document text:\n\n${textPreview}`)
-      ]
-    })
+    let response
+
+    // 1. Strict Try/Catch on Agent Execution
+    try {
+      response = await agent.invoke(
+        {
+          messages: [
+            systemPrompt,
+            new HumanMessage(`Analyze the following document text:\n\n${textPreview}`)
+          ]
+        },
+        { configurable: { thread_id: documentId } } // Checkpointer configuration
+      )
+
+      // 2. Log Token Usage
+      const aiMessages = response.messages.filter(isAIMessage)
+      const lastAiMsg = aiMessages[aiMessages.length - 1]
+
+      // LangChain attaches usage metrics to the AIMessage object
+      const tokens = lastAiMsg?.usage_metadata
+      if (tokens) {
+        console.log(
+          `[Orchestrator Token Usage] Prompt: ${tokens.input_tokens} | Completion: ${tokens.output_tokens} | Total: ${tokens.total_tokens}`
+        )
+      } else {
+        console.log(`[Orchestrator Token Usage] Metrics unavailable for this payload.`)
+      }
+    } catch (error) {
+      console.error('[OrchestratorAgent] Critical failure during agent invocation:', error)
+      throw new Error('Orchestrator execution failed.')
+    }
 
     // ==========================================
     // DATA EXTRACTION

@@ -114,3 +114,55 @@ export const applySemanticFolders = async (
     next(error)
   }
 }
+
+/**
+ * Executes a semantic similarity search across the user's entire knowledge base.
+ * @route GET /api/ai/search?q=your+search+term
+ */
+export const searchDocuments = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = (req as any).user._id
+    const query = req.query.q as string
+
+    // 🧠 Hand off to the AI Service
+    const searchResults = await AIService.semanticSearch(userId, query)
+
+    res.status(200).json({
+      success: true,
+      count: searchResults.length,
+      data: searchResults
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/**
+ * Generates a combined summary of multiple selected files.
+ * @route POST /api/ai/synthesize
+ */
+export const synthesizeDocuments = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = (req as any).user._id
+    const { documentIds } = req.body
+
+    const bulkSummary = await AIService.synthesizeDocuments(documentIds, userId)
+
+    res.status(200).json({
+      success: true,
+      data: {
+        summary: bulkSummary
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+}

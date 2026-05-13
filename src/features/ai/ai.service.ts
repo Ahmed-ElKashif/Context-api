@@ -1,12 +1,12 @@
-import path from 'path'
-import { PDFLoader } from '@langchain/community/document_loaders/fs/pdf'
-import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters'
-
+import mongoose from 'mongoose'
 import { DocumentModel } from '../documents/document.model'
-import { ChunkModel } from '../documents/chunk.model'
 import Folder, { IFolder } from '../folders/folder.model'
 import { ChatMessageModel } from './chat.model'
-import { VectorService } from './vector.service'
+import { EmbeddingService } from './vector.service'
+import { OrchestratorAgent } from './orchestrator.agent'
+import { PDFParse } from 'pdf-parse'
+import mammoth from 'mammoth'
+import { SynthesizerAgent } from './synthesizer.agent'
 
 export class AIService {
   // ==========================================
@@ -17,7 +17,7 @@ export class AIService {
   static async generateEmbedding(text: string): Promise<number[]> {
     try {
       const safeText = text.substring(0, 30000)
-      const embeddingModel = VectorService.getEmbeddingsModel()
+      const embeddingModel = EmbeddingService.getEmbeddingsModel()
 
       return await embeddingModel.embedQuery(safeText)
     } catch (error) {
@@ -26,47 +26,45 @@ export class AIService {
     }
   }
 
-  // THE VISUAL CORTEX: PDF Extractor & Chunker
-  static async processPDF(documentId: string, filePath: string, userId: string): Promise<string> {
-    // 1. Resolve the absolute path to the file uploaded by Multer
-    const absolutePath = path.join(process.cwd(), filePath)
+  // ==========================================
+  // BULK SYNTHESIS (Instructor Suggestion)
+  // ==========================================
 
-    // 2. Load the PDF using LangChain
-    const loader = new PDFLoader(absolutePath)
-    const docs = await loader.load()
-
-    if (!docs || docs.length === 0) {
-      throw new Error('No readable text found in PDF (might be a scanned image).')
-    }
-
-    // 3. Langchain Splitter: 1000 chars per chunk, 200 char overlap
-    const splitter = new RecursiveCharacterTextSplitter({
-      chunkSize: 1000,
-      chunkOverlap: 200
+  static async synthesizeDocuments(documentIds: string[], userId: string): Promise<string> {
+    // 1. Fetch the documents, ensuring they belong to the requesting user
+    const documents = await DocumentModel.find({
+      _id: { $in: documentIds },
+      user: userId
     })
 
-    const splitDocs = await splitter.splitDocuments(docs)
-    console.log(`[Visual Cortex] Sliced PDF into ${splitDocs.length} semantic chunks.`)
+    if (!documents || documents.length === 0) {
+      throw new Error('No valid documents found for synthesis.')
+    }
 
-    // 4. Bulk Generate Embeddings (Optimized for single network request)
-    const textsToEmbed = splitDocs.map((doc) => doc.pageContent)
-    const embeddingModel = VectorService.getEmbeddingsModel()
-    const embeddings = await embeddingModel.embedDocuments(textsToEmbed)
+    // If only one document is selected, just return its existing summary
+    if (documents.length === 1) {
+      return documents[0].summary || 'No summary available for this document.'
+    }
 
-    // 5. Map into strictly typed Mongoose documents
-    const chunkDocs = splitDocs.map((doc, index) => ({
-      documentId,
-      userId,
-      text: doc.pageContent,
-      embedding: embeddings[index],
-      chunkIndex: index
-    }))
+    // 2. Format the lightweight data for the LangChain Agent
+    const formattedData = documents
+      .map(
+        (doc, index) => `
+      Document ${index + 1}:
+      Title: ${doc.title || 'Unknown'}
+      Type: ${doc.fileType}
+      Tags: ${doc.tags?.join(', ')}
+      Summary: ${doc.summary}
+      ---
+    `
+      )
+      .join('\n')
 
-    // Bulk insert all chunks at once for massive speed
-    await ChunkModel.insertMany(chunkDocs)
+    // 3. Hand off to the Synthesizer Agent
+    console.log(`[Synthesizer] Synthesizing ${documents.length} documents...`)
+    const finalSummary = await SynthesizerAgent.generateBulkSummary(formattedData)
 
-    // Return the first 500 characters as a preview for the main Document
-    return splitDocs[0].pageContent.substring(0, 500) + '...'
+    return finalSummary
   }
 
   // Background Worker
@@ -80,28 +78,86 @@ export class AIService {
 
         await DocumentModel.findByIdAndUpdate(id, { aiStatus: 'Processing' })
 
-        let extractedPreview = ''
+        let rawText = ''
 
-        // Route to the correct extractor based on file type
-        if (doc.fileType === 'PDF' && doc.originalFilePath) {
-          extractedPreview = await this.processPDF(id, doc.originalFilePath, doc.user.toString())
-        } else {
-          // Placeholder for Images/Word Docs
-          extractedPreview = 'File type not fully supported by Visual Cortex yet.'
+        // ==========================================
+        // 🧠 MULTIMODAL EXTRACTION ROUTER
+        // ==========================================
+        console.log(`[AI Worker] Extracting text for type: ${doc.fileType}...`)
+
+        switch (doc.fileType) {
+          case 'TextSnippet':
+            // Frictionless Capture: Already in DB, bypass downloading entirely!
+            rawText = doc.extractedText || ''
+            break
+
+          case 'PDF':
+            if (!doc.cloudinaryUrl) throw new Error('PDF missing Cloudinary URL')
+            const pdfBuffer = await this.downloadFromCloudinary(doc.cloudinaryUrl)
+            const parser = new PDFParse({ data: pdfBuffer })
+            const pdfData = await parser.getText()
+            rawText = pdfData.text
+            break
+
+          case 'Word':
+            if (!doc.cloudinaryUrl) throw new Error('Word doc missing Cloudinary URL')
+            const wordBuffer = await this.downloadFromCloudinary(doc.cloudinaryUrl)
+            const wordData = await mammoth.extractRawText({ buffer: wordBuffer })
+            rawText = wordData.value
+            break
+
+          case 'Image':
+            if (!doc.cloudinaryUrl) throw new Error('Image missing Cloudinary URL')
+            // 🛑 PLACEHOLDER: We will inject the Gemini REST API OCR here today!
+            rawText = 'Placeholder text for Image OCR. Awaiting Gemini integration.'
+            break
+
+          default:
+            throw new Error(`Unsupported file type: ${doc.fileType}`)
         }
 
-        // Update the main document with success
+        if (!rawText || rawText.trim().length === 0) {
+          throw new Error('No readable text found in document.')
+        }
+
+        // ==========================================
+        // 🚀 UNIFIED AI PIPELINE
+        // ==========================================
+
+        // 1. Run the LangGraph Orchestrator to extract structured metadata
+        console.log(`[AI Worker] Running Orchestrator Agent on document ${id}...`)
+        const metadata = await OrchestratorAgent.analyzeDocumentMetadata(id, rawText)
+
+        // 2. Embed the text into MongoDB Atlas Vector Search
+        console.log(`[AI Worker] Embedding chunks into Atlas...`)
+        await EmbeddingService.upsert(rawText, id, doc.user.toString())
+
+        // 3. Update the main document with success and new metadata
         await DocumentModel.findByIdAndUpdate(id, {
-          extractedText: extractedPreview,
-          aiStatus: 'Analyzed'
+          extractedText: rawText,
+          aiStatus: 'Analyzed',
+          summary: metadata.summary,
+          tags: metadata.tags,
+          cognitiveLoad: metadata.cognitiveLoad,
+          fileType: metadata.type || doc.fileType // Fallback to original if not provided
         })
 
-        console.log(`[AI Worker] Document ${id} successfully analyzed and embedded.`)
+        console.log(`[AI Worker] Document ${id} successfully analyzed, orchestrated, and embedded.`)
       } catch (error) {
         console.error(`[AI Worker] Failed to process document ${id}:`, error)
         await DocumentModel.findByIdAndUpdate(id, { aiStatus: 'Failed' })
       }
     }
+  }
+
+  /**
+   * Helper method to download a file from Cloudinary into a Node.js Buffer
+   * so that our parsers (pdf-parse, mammoth) can read it in memory.
+   */
+  private static async downloadFromCloudinary(url: string): Promise<Buffer> {
+    const response = await fetch(url)
+    const arrayBuffer = await response.arrayBuffer()
+    return Buffer.from(arrayBuffer)
   }
 
   // ==========================================
@@ -220,5 +276,31 @@ export class AIService {
     return await ChatMessageModel.find({ documentId, user: userId })
       .sort({ createdAt: 1 })
       .select('role content createdAt -_id')
+  }
+
+  // ==========================================
+  // SEMANTIC SEARCH (GLOBAL)
+  // ==========================================
+
+  /**
+   * Performs a global semantic search across all documents owned by the user.
+   * STRICT SECURITY: preFilter completely isolates the vector space to the specific user.
+   */
+  static async semanticSearch(userId: string, query: string) {
+    const vectorStore = EmbeddingService.getVectorStore()
+
+    // similaritySearchWithScore returns an array of tuples: [Document, score]
+    const results = await vectorStore.similaritySearchWithScore(query, 5, {
+      preFilter: { userId: new mongoose.Types.ObjectId(userId) }
+    })
+
+    // Map LangChain's raw output into a clean, frontend-ready structure
+    return results.map(([chunk, score]) => ({
+      text: chunk.pageContent,
+      // Convert mathematical cosine score to a clean percentage (e.g., 85.42)
+      confidenceScore: Number((score * 100).toFixed(2)),
+      documentId: chunk.metadata.documentId,
+      chunkIndex: chunk.metadata.chunkIndex
+    }))
   }
 }
