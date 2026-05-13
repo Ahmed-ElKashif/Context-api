@@ -44,16 +44,31 @@ const getCloudinaryFolder = (docType: DocumentType): string => {
 const uploadBufferToCloudinary = (
   buffer: Buffer,
   folder: string,
-  originalName: string
+  originalName: string,
+  mimeType: string
 ): Promise<{ secure_url: string; public_id: string }> => {
   return new Promise((resolve, reject) => {
+    // Determine whether this is a raw (binary) file such as a Word document.
+    // For raw resources, Cloudinary does NOT automatically append the extension
+    // to the URL, so we must include it in the public_id ourselves.
+    const isRaw =
+      mimeType.includes('word') ||
+      mimeType.includes('officedocument') ||
+      mimeType.includes('octet-stream')
+
+    const resourceType: 'raw' | 'image' | 'video' | 'auto' = isRaw ? 'raw' : 'auto'
+
+    // Keep the full original filename (including extension) as the public_id.
+    // This ensures the Cloudinary URL ends with the correct extension (e.g. .docx).
+    const publicId = `${Date.now()}-${originalName}`
+
     const uploadStream = cloudinary.uploader.upload_stream(
       {
         folder,
-        // Use the original filename (without extension) as the public_id so it
-        // stays human-readable in the Cloudinary Media Library.
-        public_id: `${Date.now()}-${originalName.replace(/\.[^/.]+$/, '')}`,
-        resource_type: 'auto' // handles PDFs, images, and raw files automatically
+        public_id: publicId,
+        resource_type: resourceType,
+        use_filename: false, // we are setting public_id manually
+        unique_filename: false // timestamp prefix already guarantees uniqueness
       },
       (error, result) => {
         if (error || !result) return reject(error ?? new Error('Cloudinary upload failed'))
@@ -181,7 +196,8 @@ export const uploadData = async (
       const { secure_url, public_id } = await uploadBufferToCloudinary(
         file.buffer,
         cloudinaryFolder,
-        file.originalname
+        file.originalname,
+        file.mimetype
       )
 
       // ── Resolve Folder Tree ─────────────────────────────────────────────
