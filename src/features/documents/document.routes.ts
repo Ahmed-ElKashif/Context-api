@@ -3,6 +3,12 @@ import { protect } from '../../core/middlewares/auth.middleware'
 import { validate } from '../../core/middlewares/validate.middleware' // 🛠️ NEW: Zod Validation Middleware
 import { uploadMemory } from '../../core/middlewares/upload.middleware'
 import { uploadData } from './upload.controller'
+import {
+  // ... your existing controller imports (uploadData, etc)
+  getDocumentChatHistory,
+  chatWithDocument,
+  compareDocuments
+} from './document.controller'
 
 // 🛠️ NEW: Import your Zod Schemas
 import {
@@ -67,5 +73,18 @@ router.put('/:id', validate(updateDocumentSchema), updateDocument)
 
 // Route: DELETE /api/documents/:id
 router.delete('/:id', deleteDocument)
+
+// ==========================================
+// 💬 RAG CHAT ROUTES (Scoped to Document ID)
+// ==========================================
+
+// Route: GET /api/documents/:id/chat
+router.get('/:id/chat', getDocumentChatHistory)
+
+// Route: POST /api/documents/:id/chat
+router.post('/:id/chat', chatWithDocument)
+
+// 🤖 Route: POST /api/documents/compare
+router.post('/compare', compareDocuments)
 
 export default router

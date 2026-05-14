@@ -9,59 +9,6 @@ import { AIService } from './ai.service'
  * agent logic to the AIService.
  */
 
-// ==========================================
-// 🤖 CORE RAG AGENT (CHAT)
-// ==========================================
-
-/**
- * Handles real-time semantic chat queries against a specific document.
- * @route POST /api/ai/chat
- */
-export const askAI = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  try {
-    // Extract user ID from auth middleware and payload from body
-    const userId = (req as any).user._id
-    const { documentId, message } = req.body
-
-    // 🧠 Hand off to LangGraph Agent
-    const aiResponse = await AIService.processChat(userId, documentId, message)
-
-    res.status(200).json({ success: true, data: aiResponse })
-  } catch (error) {
-    next(error)
-  }
-}
-
-/**
- * Retrieves the LangGraph chat memory/history for a specific document.
- * @route GET /api/ai/chat/:documentId
- */
-export const getDocumentChatHistory = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const { documentId } = req.params as { documentId: string }
-    const userId = (req as any).user._id
-
-    // 🧠 Fetch thread history from Service
-    const history = await AIService.getDocumentHistory(documentId, userId)
-
-    if (!history) {
-      return next(new AppError('Document not found or access denied', 404))
-    }
-
-    res.status(200).json({ success: true, data: history })
-  } catch (error) {
-    next(error)
-  }
-}
-
-// ==========================================
-// 📂 SEMANTIC ORGANIZER (FOLDER PROPOSALS)
-// ==========================================
-
 /**
  * Analyzes a batch of unstructured documents and generates a proposed
  * relational folder structure based on semantic context (GPT-4o-mini).
@@ -88,6 +35,10 @@ export const generateSemanticStructure = async (
     next(error)
   }
 }
+
+// ==========================================
+// 📂 SEMANTIC ORGANIZER (FOLDER PROPOSALS)
+// ==========================================
 
 /**
  * Executes the AI's proposed structure, recursively building physical
@@ -116,8 +67,8 @@ export const applySemanticFolders = async (
 }
 
 /**
- * Executes a semantic similarity search across the user's entire knowledge base.
- * @route GET /api/ai/search?q=your+search+term
+ * Performs a global semantic search across all of a user's embedded documents.
+ * @route GET /api/ai/search?q=your_search_term
  */
 export const searchDocuments = async (
   req: Request,
@@ -125,18 +76,30 @@ export const searchDocuments = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const userId = (req as any).user._id
+    const userId = (req as any).user._id.toString()
     const query = req.query.q as string
 
-    // 🧠 Hand off to the AI Service
-    const searchResults = await AIService.semanticSearch(userId, query)
+    if (!query) {
+      res.status(400).json({
+        success: false,
+        message: 'Search query is required (e.g., ?q=recipe).'
+      })
+      return
+    }
+
+    // 🧠 Hand off to the AI Service (the God Function we just perfected!)
+    // Note: Make sure your import matches wherever you put semanticSearch
+    // (e.g., AIService or EmbeddingService)
+    const results = await AIService.semanticSearch(userId, query)
 
     res.status(200).json({
       success: true,
-      count: searchResults.length,
-      data: searchResults
+      count: results.length,
+      data: results
     })
   } catch (error) {
+    // I noticed you used `next(error)` in your snippet, which is the perfect
+    // way to hand errors to a global Express error-handling middleware!
     next(error)
   }
 }
@@ -153,6 +116,10 @@ export const synthesizeDocuments = async (
   try {
     const userId = (req as any).user._id
     const { documentIds } = req.body
+
+    if (!documentIds || !Array.isArray(documentIds) || documentIds.length === 0) {
+      return next(new AppError('Please provide an array of documentIds.', 400))
+    }
 
     const bulkSummary = await AIService.synthesizeDocuments(documentIds, userId)
 

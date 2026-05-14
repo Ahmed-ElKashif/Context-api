@@ -4,13 +4,17 @@ import { AppError } from '../errors/AppError'
 // Allowed MIME types — PDFs, Word Docs, and Images
 const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   const allowedMimeTypes = [
-    'application/pdf',                                                        // PDFs
-    'application/msword',                                                     // Word (.doc)
-    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',// Word (.docx)
-    'image/jpeg',                                                             // Images
+    'application/pdf', // PDFs
+    'application/msword', // Word (.doc)
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // Word (.docx)
+    'image/jpeg',
+    'image/jpg',
     'image/png',
     'image/webp'
   ]
+
+  // Add this line to see exactly what Postman is trying to sneak past the bouncer:
+  console.log(`[Multer] Incoming file: ${file.originalname} | MimeType: ${file.mimetype}`)
 
   if (allowedMimeTypes.includes(file.mimetype)) {
     cb(null, true)
@@ -30,6 +34,6 @@ export const uploadMemory = multer({
   storage: multer.memoryStorage(),
   fileFilter,
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10 MB
-  },
+    fileSize: 10 * 1024 * 1024 // 10 MB
+  }
 })

@@ -1,13 +1,15 @@
 import mongoose from 'mongoose'
 import { DocumentModel } from '../documents/document.model'
 import Folder, { IFolder } from '../folders/folder.model'
-import { ChatMessageModel } from './chat.model'
 import { EmbeddingService } from './vector.service'
 import { OrchestratorAgent } from './orchestrator.agent'
 import { PDFParse } from 'pdf-parse'
 import mammoth from 'mammoth'
 import { SynthesizerAgent } from './synthesizer.agent'
 import { VisualCortexService } from './visual-cortex.service'
+import { z } from 'zod'
+import { ChatOpenAI } from '@langchain/openai'
+import { SystemMessage, HumanMessage } from '@langchain/core/messages'
 
 export class AIService {
   // ==========================================
@@ -74,9 +76,12 @@ export class AIService {
 
     for (const id of documentIds) {
       try {
-        const doc = await DocumentModel.findById(id)
+        // 🛠️ THE FIX: Populate the user to grab their persona!
+        const doc = await DocumentModel.findById(id).populate('user')
         if (!doc) continue
 
+        // Extract the persona (fallback to 'general' just in case)
+        const userPersona = (doc.user as any).persona || 'general'
         await DocumentModel.findByIdAndUpdate(id, { aiStatus: 'Processing' })
 
         let rawText = ''
@@ -135,11 +140,11 @@ export class AIService {
 
         // 1. Run the LangGraph Orchestrator to extract structured metadata
         console.log(`[AI Worker] Running Orchestrator Agent on document ${id}...`)
-        const metadata = await OrchestratorAgent.analyzeDocumentMetadata(id, rawText)
-
+        const metadata = await OrchestratorAgent.analyzeDocumentMetadata(id, rawText, userPersona)
         // 2. Embed the text into MongoDB Atlas Vector Search
         console.log(`[AI Worker] Embedding chunks into Atlas...`)
-        await EmbeddingService.upsert(rawText, id, doc.user.toString())
+        // 🛠️ THE FIX: Grab the _id from the populated user object!
+        await EmbeddingService.upsert(rawText, id, (doc.user as any)._id.toString())
 
         // 3. Update the main document with success and new metadata
         await DocumentModel.findByIdAndUpdate(id, {
@@ -148,7 +153,8 @@ export class AIService {
           summary: metadata.summary,
           tags: metadata.tags,
           cognitiveLoad: metadata.cognitiveLoad,
-          fileType: metadata.type || doc.fileType // Fallback to original if not provided
+          // 🛠️ THE FIX: Save the physical type and semantic type safely and separately!
+          contentType: metadata.type
         })
 
         console.log(`[AI Worker] Document ${id} successfully analyzed, orchestrated, and embedded.`)
@@ -173,19 +179,6 @@ export class AIService {
   // MOCKED FEATURES (TO BE UPGRADED)
   // ==========================================
 
-  // 1. Mock Chat
-  static async processChat(userId: string, documentId: string, message: string) {
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    return {
-      reply: `This is a mocked AI response. In the real version, I will read the document and answer your prompt: "${message}"`,
-      insights: [
-        'The document focuses on modern tech stacks.',
-        'There are 3 main action items detected.'
-      ],
-      riskWarnings: ['Confidential data detected in paragraph 2.']
-    }
-  }
-
   // 2. Mock Comparison
   static async compareDocs(doc1Id: string, doc2Id: string) {
     await new Promise((resolve) => setTimeout(resolve, 2500))
@@ -203,88 +196,157 @@ export class AIService {
     }
   }
 
-  // 3. Mock Folder Organization (The Proposal)
+  // 3. AI Folder Organization (The Proposal)
   static async generateSemanticProposal(
     userId: string,
     documents: { _id?: string; id?: string; title: string }[]
   ) {
+    // 1. Get existing folder paths so the AI doesn't reinvent the wheel
     const existingPaths = await Folder.distinct('path', { user: userId })
-    await new Promise((resolve) => setTimeout(resolve, 3000))
 
-    return documents.map((doc) => {
-      let newPath = 'Miscellaneous'
-      const titleLower = (doc.title || '').toLowerCase()
+    // 2. Extract IDs and fetch the rich semantic metadata from the DB!
+    const docIds = documents.map((d) => d._id || d.id).filter(Boolean) as string[]
+    const dbDocs = await DocumentModel.find({ _id: { $in: docIds }, user: userId }).select(
+      '_id title summary tags fileType contentType'
+    )
 
-      if (titleLower.includes('invoice') || titleLower.includes('tax')) {
-        newPath = existingPaths.includes('Finance/Invoices')
-          ? 'Finance/Invoices'
-          : 'Personal/Finance'
-      } else if (titleLower.includes('contract') || titleLower.includes('nda')) {
-        newPath = 'Work/Legal'
-      } else if (
-        titleLower.includes('png') ||
-        titleLower.includes('jpg') ||
-        titleLower.includes('image')
-      ) {
-        newPath = 'Media/Images'
-      }
+    if (dbDocs.length === 0) return []
 
-      return { documentId: doc._id || doc.id, newPath }
+    // 3. Force the AI to return a strict JSON array using Zod
+    const ProposalSchema = z.object({
+      updates: z.array(
+        z.object({
+          documentId: z.string().describe('The exact ID of the document'),
+          newPath: z
+            .string()
+            .describe(
+              "The proposed folder path (e.g., 'Finance/Invoices', 'Recipes/Desserts'). Use '/' for nesting."
+            )
+        })
+      )
     })
+
+    // 4. Initialize the LLM with the Structured Output tool
+    const llm = new ChatOpenAI({
+      modelName: 'gpt-4o-mini',
+      temperature: 0.1 // Very low temp so it categorizes logically and consistently
+    }).withStructuredOutput(ProposalSchema)
+
+    // 5. Prepare the payload (This is why your earlier Orchestrator work was brilliant)
+    const docPayload = dbDocs.map((doc) => ({
+      id: doc._id.toString(),
+      title: doc.title,
+      summary: doc.summary, // The AI actually knows what the document is about!
+      tags: doc.tags,
+      type: doc.contentType || doc.fileType
+    }))
+
+    // 6. Define the Librarian Rules
+    const systemPrompt = new SystemMessage(`
+      You are an elite digital librarian. 
+      Your task is to analyze a batch of uploaded documents and organize them into a clean, logical, hierarchical folder structure based on their semantic content.
+      
+      EXISTING FOLDER PATHS:
+      ${existingPaths.length > 0 ? existingPaths.join('\n') : 'No existing folders. You have a blank slate.'}
+      
+      RULES:
+      1. Reuse existing folder paths if they perfectly match the document's content.
+      2. If no existing folder fits, invent a new, highly logical nested path (e.g., "Health/Medical Records" or "Personal/Receipts").
+      3. Keep paths concise (maximum 3 levels deep).
+      4. Group similar documents together.
+    `)
+
+    const humanPrompt = new HumanMessage(JSON.stringify(docPayload, null, 2))
+
+    console.log(`[AI Organizer] Proposing folders for ${dbDocs.length} documents...`)
+
+    // 7. Invoke the model
+    const response = await llm.invoke([systemPrompt, humanPrompt])
+
+    // Returns perfectly structured: [{ documentId: "...", newPath: "..." }]
+    return response.updates
   }
 
   // ==========================================
   // PHYSICAL FOLDER ACTIONS
   // ==========================================
 
-  // 4. Recursive Folder Creation
+  // 4. Recursive Folder Creation (Optimized with Caching & BulkWrite)
   static async applyPhysicalFolders(
     userId: string,
     updates: { documentId: string; newPath: string }[]
   ) {
+    if (!updates || updates.length === 0) return
+
+    // 1. Pre-fetch existing folders into memory (O(1) lookups!)
+    const existingFolders = await Folder.find({ user: userId }).select('_id path')
+    const folderCache = new Map<string, string>()
+    existingFolders.forEach((folder) => {
+      folderCache.set(folder.path, folder._id.toString())
+    })
+
+    // Array to hold our document updates for a single Bulk transaction
+    const documentOperations = []
+
+    // 2. Process each AI proposal
     for (const update of updates) {
       const { documentId, newPath } = update
       if (!documentId || !newPath) continue
 
-      const pathParts = newPath.split('/').filter((p: string) => p.trim() !== '')
+      const pathParts = newPath.split('/').filter((p) => p.trim() !== '')
       let currentParentId = null
       let accumulatedPath = ''
 
       for (const part of pathParts) {
         accumulatedPath = accumulatedPath ? `${accumulatedPath}/${part}` : part
 
-        let folder: IFolder | null = await Folder.findOne({
-          name: part,
-          user: userId,
-          parentFolder: currentParentId
-        })
-
-        if (!folder) {
-          folder = await Folder.create({
-            name: part,
-            user: userId,
-            parentFolder: currentParentId,
-            path: accumulatedPath
-          })
+        // ⚡ CHECK MEMORY FIRST: If we already know this folder exists, skip the DB!
+        if (folderCache.has(accumulatedPath)) {
+          currentParentId = folderCache.get(accumulatedPath)
+          continue
         }
-        currentParentId = folder._id
+
+        // 🛡️ ATOMIC UPSERT: Find it, or create it safely if it doesn't exist
+        const upsertedFolder = await Folder.findOneAndUpdate(
+          { name: part, user: userId, parentFolder: currentParentId },
+          {
+            $setOnInsert: {
+              name: part,
+              user: userId,
+              parentFolder: currentParentId,
+              path: accumulatedPath
+            }
+          },
+          { upsert: true, new: true } // Return the newly created/found doc
+        ) as any
+
+        currentParentId = upsertedFolder._id.toString()
+        // Save the new folder to our memory cache for the next document in the loop
+        folderCache.set(accumulatedPath, currentParentId)
       }
 
-      await DocumentModel.findByIdAndUpdate(documentId, {
-        folder: currentParentId,
-        semanticPath: newPath
+      // 3. Queue up the Document update
+      documentOperations.push({
+        updateOne: {
+          filter: { _id: documentId },
+          update: {
+            $set: {
+              folder: currentParentId,
+              semanticPath: newPath,
+              isOrganized: true // 🛠️ Hides the AI button on the frontend!
+            }
+          }
+        }
       })
     }
-  }
 
-  // 5. Fetch Chat History
-  static async getDocumentHistory(documentId: string, userId: string) {
-    const document = await DocumentModel.findOne({ _id: documentId, user: userId })
-    if (!document) return null
-
-    return await ChatMessageModel.find({ documentId, user: userId })
-      .sort({ createdAt: 1 })
-      .select('role content createdAt -_id')
+    // 4. Execute all document updates in ONE database round-trip
+    if (documentOperations.length > 0) {
+      await DocumentModel.bulkWrite(documentOperations)
+      console.log(
+        `[Folder Organizer] Successfully applied ${documentOperations.length} folder updates via BulkWrite.`
+      )
+    }
   }
 
   // ==========================================
@@ -296,20 +358,54 @@ export class AIService {
    * STRICT SECURITY: preFilter completely isolates the vector space to the specific user.
    */
   static async semanticSearch(userId: string, query: string) {
-    const vectorStore = EmbeddingService.getVectorStore()
+    // 🛠️ FIX 1: Added the missing 'await'
+    const vectorStore = await EmbeddingService.getVectorStore()
+
+    console.log(`[Global Search] Scanning vector space for user ${userId}...`)
 
     // similaritySearchWithScore returns an array of tuples: [Document, score]
     const results = await vectorStore.similaritySearchWithScore(query, 5, {
-      preFilter: { userId: new mongoose.Types.ObjectId(userId) }
+      preFilter: {
+        // Keep it explicit with $eq just to be absolutely safe with Atlas Search
+        userId: { $eq: new mongoose.Types.ObjectId(userId) }
+      }
     })
 
-    // Map LangChain's raw output into a clean, frontend-ready structure
-    return results.map(([chunk, score]) => ({
-      text: chunk.pageContent,
-      // Convert mathematical cosine score to a clean percentage (e.g., 85.42)
-      confidenceScore: Number((score * 100).toFixed(2)),
-      documentId: chunk.metadata.documentId,
-      chunkIndex: chunk.metadata.chunkIndex
-    }))
+    if (results.length === 0) return []
+
+    // 🛠️ FIX 2: Hydrate the results with actual Document metadata
+    // First, extract all unique document IDs from the vector results
+    const uniqueDocIds = [...new Set(results.map(([chunk]) => chunk.metadata.documentId))]
+
+    // Fetch the actual document titles and types from MongoDB
+    const actualDocuments = await DocumentModel.find({
+      _id: { $in: uniqueDocIds }
+    }).select('title fileType cloudinaryUrl')
+
+    // Create a lookup dictionary for blazing fast mapping
+    const docLookup = actualDocuments.reduce(
+      (acc, doc) => {
+        acc[doc._id.toString()] = doc
+        return acc
+      },
+      {} as Record<string, any>
+    )
+
+    // Map LangChain's raw output into a clean, hydrated frontend structure
+    return results.map(([chunk, score]) => {
+      const docId = chunk.metadata.documentId.toString()
+      const parentDoc = docLookup[docId]
+
+      return {
+        text: chunk.pageContent,
+        confidenceScore: Number((score * 100).toFixed(2)),
+        documentId: docId,
+        // Provide the frontend with the UI details it actually needs!
+        documentTitle: parentDoc?.title || 'Unknown Document',
+        documentType: parentDoc?.fileType || 'Unknown',
+        documentUrl: parentDoc?.cloudinaryUrl || null,
+        chunkIndex: chunk.metadata.chunkIndex
+      }
+    })
   }
 }

@@ -14,7 +14,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
-    "@langchain/community": "1.1.28",
+    "@langchain/community": "^1.1.28",
     "@langchain/core": "1.1.45",
     "@langchain/google-genai": "^2.1.30",
     "@langchain/groq": "1.2.0",

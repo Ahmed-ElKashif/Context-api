@@ -84,7 +84,8 @@ export class OrchestratorAgent {
    */
   public static async analyzeDocumentMetadata(
     documentId: string,
-    textPreview: string
+    textPreview: string,
+    persona: string = 'general' // 🛠️ NEW: Added persona parameter
   ): Promise<DocumentMetadata> {
     const model = await initChatModel('gpt-4o-mini', {
       temperature: 0.2,
@@ -93,9 +94,29 @@ export class OrchestratorAgent {
 
     const tools = [this.classifyDocument, this.labelCognitiveLoad, this.generateTags]
 
+    // 🧠 🛠️ NEW: Dynamic Persona Dictionary
+    const personaPrompts: Record<string, string> = {
+      general: 'Write a clear, easy-to-understand summary that anyone can digest.',
+      professional:
+        'Write a concise, executive-level brief focusing on actionable business insights, bottom-line impacts, and key metrics.',
+      student:
+        'Write an educational summary highlighting key concepts, definitions, and potential study points or exam topics.',
+      developer:
+        'Write a highly technical summary focusing on architecture, code patterns, algorithms, system design, and technical specifications.'
+    }
+
+    // Grab the specific instruction, fallback to general if an unknown string is passed
+    const stylingRule = personaPrompts[persona.toLowerCase()] || personaPrompts['general']
+
+    // 🛠️ NEW: Updated System Prompt
     const systemPrompt = new SystemMessage(`
       You are an elite Document Orchestrator Agent. 
       Your sole responsibility is to analyze the provided document text and extract metadata.
+      
+      CRITICAL INSTRUCTION FOR THE SUMMARY:
+      The user who uploaded this document has the persona: "${persona}".
+      When generating the summary for the classifyDocument tool, you MUST follow this style:
+      ${stylingRule}
       
       CRITICAL WORKFLOW:
       You MUST call all three tools in this exact order to complete your task:

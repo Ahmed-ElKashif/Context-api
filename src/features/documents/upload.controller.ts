@@ -5,6 +5,7 @@ import Folder, { IFolder } from '../folders/folder.model'
 import { configureCloudinary } from '../../config/cloudinary'
 import streamifier from 'streamifier'
 import { AIService } from '../ai/ai.service'
+import crypto from 'crypto'
 
 const cloudinary = configureCloudinary()
 
@@ -115,7 +116,7 @@ export const uploadData = async (
 ): Promise<void> => {
   try {
     const userId = (req as any).user._id
-    const { title, fileType, extractedText, tags, clientPaths } = req.body
+    const { title, fileType, extractedText, tags, clientPaths } = req.body || {}
 
     // --- FLOW A: Text Snippets ---
     if (fileType === 'TextSnippet') {
@@ -134,7 +135,7 @@ export const uploadData = async (
         originalClientPath: '/',
         semanticPath: '/',
         folder: null,
-        fileSize: 0 // text snippets have no physical file size
+        fileSize: 0
       })
 
       res.status(201).json({ success: true, count: 1, data: [snippet] })
@@ -142,7 +143,7 @@ export const uploadData = async (
     }
 
     // --- FLOW B: Batch Physical Files ---
-    const files = req.files as Express.Multer.File[]
+    const files = (req.files as Express.Multer.File[]) || (req.file ? [req.file] : [])
 
     if (!files || files.length === 0) {
       return next(new AppError('Please upload at least one valid file', 400))
@@ -155,12 +156,30 @@ export const uploadData = async (
 
     const folderCache = new Map<string, any>()
     const docsToInsert = []
+    const skippedFiles = [] // 🛠️ NEW: Keep track of duplicates so we can warn the user
+
     const dbTitleCache = new Map<string, Set<string>>()
     const batchTitleCache = new Map<string, Set<string>>()
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
       const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8')
+
+      // ==========================================
+      // 🛡️ DEDUPLICATION CHECK (SHA-256)
+      // ==========================================
+      // 1. Calculate the unique digital fingerprint of this specific file
+      const fileHash = crypto.createHash('sha256').update(file.buffer).digest('hex')
+
+      // 2. Check if this exact file already exists in the user's database
+      const isDuplicate = await DocumentModel.exists({ user: userId, fileHash })
+
+      if (isDuplicate) {
+        console.log(`[Upload] Skipped duplicate file: ${originalName}`)
+        skippedFiles.push(originalName) // Add to our warning list
+        continue // 🛑 SKIP Cloudinary and DB insertion for this specific file!
+      }
+      // ==========================================
 
       const fileSizeMB = file.size / (1024 * 1024)
       let load: 'Light' | 'Medium' | 'Heavy' = 'Medium'
@@ -214,10 +233,9 @@ export const uploadData = async (
                 user: userId,
                 parentFolder: currentParentId,
                 path: accumulatedPath,
-                isPinned: part === 'Random files' // pin the Random files folder
+                isPinned: part === 'Random files'
               })
             } else if (part === 'Random files' && !folder.isPinned) {
-              // Ensure the existing Random files folder is pinned
               await Folder.findByIdAndUpdate(folder._id, { isPinned: true })
             }
             currentParentId = folder._id
@@ -247,8 +265,19 @@ export const uploadData = async (
         semanticPath: '/',
         folder: currentParentId,
         tags: tags ? JSON.parse(tags) : [],
-        fileSize: file.size // ← added: capture raw bytes from multer
+        fileSize: file.size,
+        fileHash: fileHash // 🛠️ NEW: Save the hash so the bouncer catches it next time!
       })
+    }
+
+    // If ALL files were duplicates, exit early
+    if (docsToInsert.length === 0) {
+      res.status(409).json({
+        success: false,
+        message: 'All uploaded files were duplicates and were skipped.',
+        skippedFiles
+      })
+      return
     }
 
     const createdDocs = await DocumentModel.insertMany(docsToInsert)
@@ -272,7 +301,14 @@ export const uploadData = async (
       console.error('Background AI processing failed:', err)
     })
 
-    res.status(201).json({ success: true, count: createdDocs.length, data: createdDocs })
+    // Return success, but include the skipped array so the frontend can show a toast notification!
+    res.status(201).json({
+      success: true,
+      count: createdDocs.length,
+      data: createdDocs,
+      skippedCount: skippedFiles.length,
+      skippedFiles
+    })
   } catch (error) {
     next(error)
   }
