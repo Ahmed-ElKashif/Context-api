@@ -124,6 +124,27 @@ export const uploadData = async (
         return next(new AppError('extractedText is required for TextSnippets', 400))
       }
 
+      // ── Resolve the "Random files" folder (create if it doesn't exist) ──────
+      // This mirrors the exact logic used in Flow B for pathless physical files,
+      // so all snippets land in the same pinned folder rather than at root.
+      let randomFilesFolder = await Folder.findOne({
+        name: 'Random files',
+        user: userId,
+        parentFolder: null
+      })
+
+      if (!randomFilesFolder) {
+        randomFilesFolder = await Folder.create({
+          name: 'Random files',
+          user: userId,
+          parentFolder: null,
+          path: 'Random files',
+          isPinned: true
+        })
+      } else if (!randomFilesFolder.isPinned) {
+        await Folder.findByIdAndUpdate(randomFilesFolder._id, { isPinned: true })
+      }
+
       const snippet = await DocumentModel.create({
         user: userId,
         title: title || `Snippet: ${extractedText.substring(0, 20)}...`,
@@ -132,11 +153,14 @@ export const uploadData = async (
         cognitiveLoad: 'Light',
         extractedText,
         tags: tags ? JSON.parse(tags) : [],
-        originalClientPath: '/',
+        originalClientPath: 'Random files',
         semanticPath: '/',
-        folder: null,
+        folder: randomFilesFolder._id,
         fileSize: 0
       })
+
+      // Update the folder's timestamp so it sorts correctly in the library
+      await Folder.findByIdAndUpdate(randomFilesFolder._id, { updatedAt: new Date() })
 
       res.status(201).json({ success: true, count: 1, data: [snippet] })
       return
