@@ -3,7 +3,7 @@ import cors from 'cors'
 import helmet from 'helmet'
 import morgan from 'morgan'
 import rateLimit from 'express-rate-limit'
-
+import adminRoutes from './features/admin/admin.routes'
 
 import { AppError } from './core/errors/AppError'
 import { globalErrorHandler } from './core/middlewares/error.middleware'
@@ -16,6 +16,8 @@ import aiRoutes from './features/ai/ai.routes'
 import folderRoutes from './features/folders/folder.routes'
 import comparisonRoutes from './features/comparison/comparison.routes'
 
+import { analyticsMiddleware } from './core/middlewares/analytics.middleware'
+import analyticsRoutes from './features/analytics/analytics.routes'
 const app: Application = express()
 
 // ==========================================
@@ -45,6 +47,9 @@ app.use('/api', limiter)
 // Body parser, reading data from body into req.body
 app.use(express.json({ limit: '10kb' })) // Prevents massive payload attacks
 
+//analytics middleware should be attached after auth middleware so it can access req.user 
+app.use(analyticsMiddleware) 
+
 // ==========================================
 // ⚙️ 2. UTILITY MIDDLEWARES
 // ==========================================
@@ -71,6 +76,8 @@ app.use('/api/documents', documentRoutes)
 app.use('/api/ai', aiRoutes)
 app.use('/api/folders', folderRoutes)
 app.use('/api/comparison', comparisonRoutes)
+app.use('/api/admin', adminRoutes) // Admin routes (must be last to avoid conflicts) 
+app.use('/api/analytics', analyticsRoutes) // Analytics routes (after all other routes so it can track them)
 
 // 404 Handler for undefined routes
 app.use((req: Request, res: Response, next: NextFunction) => {

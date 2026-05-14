@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express'
-import { AuthService } from './auth.service' // 🛠️ NOW POINTS TO AUTH SERVICE
+import { AuthService } from './auth.service'
 import { AppError } from '../../core/errors/AppError'
 
 export const register = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -21,7 +21,8 @@ export const register = async (req: Request, res: Response, next: NextFunction):
         username: result.user?.username,
         email: result.user?.email,
         persona: result.user?.persona,
-        avatar: (result.user as any)?.avatar
+        avatar: (result.user as any)?.avatar,
+        role: result.user?.role ?? 'user',   // ← added
       }
     })
   } catch (error) {
@@ -43,12 +44,13 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
       success: true,
       token: result.token,
       user: {
-        id: result.user?._id, // 🛠️ FIXED Mongoose ID mapping
+        id: result.user?._id,
         fullName: result.user?.fullName,
         username: result.user?.username,
         email: result.user?.email,
         persona: result.user?.persona,
-        avatar: (result.user as any)?.avatar
+        avatar: (result.user as any)?.avatar,
+        role: result.user?.role ?? 'user',   // ← added
       }
     })
   } catch (error) {
