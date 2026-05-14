@@ -158,6 +158,7 @@ export const uploadData = async (
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
+      const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8')
 
       const fileSizeMB = file.size / (1024 * 1024)
       let load: 'Light' | 'Medium' | 'Heavy' = 'Medium'
@@ -165,22 +166,26 @@ export const uploadData = async (
       if (fileSizeMB > 5) load = 'Heavy'
 
       const inferredType = getFileTypeFromMime(file.mimetype)
-      const originalPath = parsedPaths[i] || `/${file.originalname}`
+      const originalPath = parsedPaths[i] || `/${originalName}`
 
       const cloudinaryFolder = getCloudinaryFolder(inferredType)
       const { secure_url, public_id } = await uploadBufferToCloudinary(
         file.buffer,
         cloudinaryFolder,
-        file.originalname,
+        originalName,
         file.mimetype
       )
 
       const pathParts = originalPath.split('/').filter(p => p.trim() !== '' && p !== '.')
 
       if (pathParts.length > 0) {
-        const lastPart = pathParts[pathParts.length - 1]
-        if (lastPart === file.originalname || lastPart.includes('.')) {
-          pathParts.pop()
+        const lastPart = pathParts[pathParts.length - 1];
+        if (
+          lastPart === originalName ||
+          lastPart === file.originalname ||
+          lastPart.includes('.')
+        ) {
+          pathParts.pop();
         }
       }
 
@@ -227,7 +232,7 @@ export const uploadData = async (
       const batchTitles = batchTitleCache.get(folderKey) ?? new Set<string>()
       const allTaken = new Set<string>([...dbTitles, ...batchTitles])
 
-      const uniqueTitle = resolveUniqueTitle(file.originalname, allTaken)
+      const uniqueTitle = resolveUniqueTitle(originalName, allTaken)
       batchTitles.add(uniqueTitle.toLowerCase())
       batchTitleCache.set(folderKey, batchTitles)
 
