@@ -1,31 +1,28 @@
 import mongoose, { Document, Schema } from 'mongoose'
-
 import { IDocument } from '../documents/document.model'
 
-// 1. TypeScript Interface (For autocomplete in VS Code)
 export interface IUser extends Document {
-  fullName: string // 👈 Renamed from 'name'
+  fullName: string
   username: string
   email: string
   passwordHash: string
-
+  role: 'user' | 'admin'          // ← added
   persona: 'general' | 'professional' | 'student' | 'developer'
   avatar?: string
   avatarPublicId?: string
-  files?: IDocument[] //  (It's optional because it only exists if you populate it)
-
+  isSuspended?: boolean            // ← added (needed by admin suspend endpoint)
+  files?: IDocument[]
   createdAt: Date
   updatedAt: Date
 }
 
-// 2. Mongoose Schema (The Database Rules)
 const userSchema = new Schema<IUser>(
   {
     fullName: { type: String, required: true, trim: true },
     username: {
       type: String,
       required: true,
-      unique: true, // 👈 Usernames must be unique!
+      unique: true,
       trim: true,
       lowercase: true
     },
@@ -37,29 +34,32 @@ const userSchema = new Schema<IUser>(
       trim: true
     },
     passwordHash: { type: String, required: true },
+    role: {
+      type: String,
+      enum: ['user', 'admin'],
+      default: 'user'              // every new user is 'user' by default
+    },
     persona: {
       type: String,
       required: true,
       enum: ['general', 'professional', 'student', 'developer'],
       default: 'general'
-    }
-    ,
+    },
     avatar: { type: String, required: false },
-    avatarPublicId: { type: String, required: false }
+    avatarPublicId: { type: String, required: false },
+    isSuspended: { type: Boolean, default: false }
   },
   {
-    timestamps: true // Automatically manages createdAt and updatedAt
+    timestamps: true
   }
 )
 
-// This creates a virtual 'files' field
 userSchema.virtual('files', {
-  ref: 'Document', // The model to use
-  localField: '_id', // Find files where 'user' matches this user's '_id'
-  foreignField: 'user' // The field in the Document schema that holds the REFID
+  ref: 'Document',
+  localField: '_id',
+  foreignField: 'user'
 })
 
-// You also have to tell Mongoose to include virtuals when converting to JSON
 userSchema.set('toJSON', { virtuals: true })
 userSchema.set('toObject', { virtuals: true })
 
