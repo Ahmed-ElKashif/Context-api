@@ -7,6 +7,7 @@ import { OrchestratorAgent } from './orchestrator.agent'
 import { PDFParse } from 'pdf-parse'
 import mammoth from 'mammoth'
 import { SynthesizerAgent } from './synthesizer.agent'
+import { VisualCortexService } from './visual-cortex.service'
 
 export class AIService {
   // ==========================================
@@ -108,8 +109,16 @@ export class AIService {
 
           case 'Image':
             if (!doc.cloudinaryUrl) throw new Error('Image missing Cloudinary URL')
-            // 🛑 PLACEHOLDER: We will inject the Gemini REST API OCR here today!
-            rawText = 'Placeholder text for Image OCR. Awaiting Gemini integration.'
+            console.log(`[AI Worker] Activating Gemini Flash Visual Cortex for Image OCR...`)
+
+            // 1. Download the image from Cloudinary into a buffer
+            const imageBuffer = await this.downloadFromCloudinary(doc.cloudinaryUrl)
+
+            // 2. Convert the buffer to a base64 string
+            const base64Data = imageBuffer.toString('base64')
+
+            // 3. Hand off to the Visual Cortex!
+            rawText = await VisualCortexService.extractImageContent(base64Data, 'image/jpeg')
             break
 
           default:
