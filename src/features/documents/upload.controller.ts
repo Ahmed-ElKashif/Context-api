@@ -6,14 +6,10 @@ import { configureCloudinary } from '../../config/cloudinary'
 import streamifier from 'streamifier'
 import { AIService } from '../ai/ai.service'
 
-// Ensure Cloudinary is configured
 const cloudinary = configureCloudinary()
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Map a MIME type to your DocumentType enum value.
- */
 const getFileTypeFromMime = (mimeType: string): DocumentType => {
   if (mimeType.includes('pdf')) return 'PDF'
   if (mimeType.includes('word') || mimeType.includes('officedocument')) return 'Word'
@@ -21,9 +17,6 @@ const getFileTypeFromMime = (mimeType: string): DocumentType => {
   return 'TextSnippet'
 }
 
-/**
- * Map a DocumentType to the Cloudinary sub-folder name.
- */
 const getCloudinaryFolder = (docType: DocumentType): string => {
   switch (docType) {
     case 'PDF':
@@ -37,10 +30,6 @@ const getCloudinaryFolder = (docType: DocumentType): string => {
   }
 }
 
-/**
- * Upload a file buffer to Cloudinary and resolve with the upload result.
- * Uses the upload_stream API so nothing is written to disk.
- */
 const uploadBufferToCloudinary = (
   buffer: Buffer,
   folder: string,
@@ -75,24 +64,18 @@ const uploadBufferToCloudinary = (
         resolve({ secure_url: result.secure_url, public_id: result.public_id })
       }
     )
-
-    // Pipe the in-memory buffer into the Cloudinary upload stream
     streamifier.createReadStream(buffer).pipe(uploadStream)
   })
 }
 
 // ─── Windows-style duplicate title helpers ────────────────────────────────────
 
-/** Splits "report.pdf" → ["report", ".pdf"], "README" → ["README", ""] */
 const splitExtension = (filename: string): [string, string] => {
   const dotIdx = filename.lastIndexOf('.')
   if (dotIdx <= 0) return [filename, '']
   return [filename.slice(0, dotIdx), filename.slice(dotIdx)]
 }
 
-/**
- * Per-request cache: folderId (string) → Set of lowercase titles already in DB.
- */
 const loadFolderTitles = async (
   userId: string,
   folderId: string | null,
@@ -107,9 +90,6 @@ const loadFolderTitles = async (
   return titles
 }
 
-/**
- * Returns a unique Windows-style name like "report(1).pdf".
- */
 const resolveUniqueTitle = (filename: string, takenTitles: Set<string>): string => {
   if (!takenTitles.has(filename.toLowerCase())) return filename
 
@@ -153,7 +133,8 @@ export const uploadData = async (
         tags: tags ? JSON.parse(tags) : [],
         originalClientPath: '/',
         semanticPath: '/',
-        folder: null
+        folder: null,
+        fileSize: 0 // text snippets have no physical file size
       })
 
       res.status(201).json({ success: true, count: 1, data: [snippet] })
@@ -174,45 +155,38 @@ export const uploadData = async (
 
     const folderCache = new Map<string, any>()
     const docsToInsert = []
-
-    // Caches for deduplication
     const dbTitleCache = new Map<string, Set<string>>()
     const batchTitleCache = new Map<string, Set<string>>()
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
+      const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8')
 
-      // ── Cognitive-load heuristic ────────────────────────────────────────
       const fileSizeMB = file.size / (1024 * 1024)
       let load: 'Light' | 'Medium' | 'Heavy' = 'Medium'
       if (fileSizeMB < 2) load = 'Light'
       if (fileSizeMB > 5) load = 'Heavy'
 
       const inferredType = getFileTypeFromMime(file.mimetype)
-      const originalPath = parsedPaths[i] || `/${file.originalname}`
+      const originalPath = parsedPaths[i] || `/${originalName}`
 
-      // ── Upload to Cloudinary ────────────────────────────────────────────
       const cloudinaryFolder = getCloudinaryFolder(inferredType)
       const { secure_url, public_id } = await uploadBufferToCloudinary(
         file.buffer,
         cloudinaryFolder,
-        file.originalname,
+        originalName,
         file.mimetype
       )
 
-      // ── Resolve Folder Tree ─────────────────────────────────────────────
       const pathParts = originalPath.split('/').filter((p) => p.trim() !== '' && p !== '.')
 
-      // Strip filename from pathParts if it's there
       if (pathParts.length > 0) {
         const lastPart = pathParts[pathParts.length - 1]
-        if (lastPart === file.originalname || lastPart.includes('.')) {
+        if (lastPart === originalName || lastPart === file.originalname || lastPart.includes('.')) {
           pathParts.pop()
         }
       }
 
-      // Individual files with no folder path go into the pinned "Random files" virtual folder.
-      // Storage is still in Cloudinary — this is only the MongoDB organizational folder.
       if (pathParts.length === 0) {
         pathParts.push('Random files')
       }
@@ -252,17 +226,15 @@ export const uploadData = async (
         }
       }
 
-      // ── Windows-style title deduplication ──────────────────────────────────
       const folderKey = currentParentId ? String(currentParentId) : 'root'
       const dbTitles = await loadFolderTitles(userId, currentParentId, dbTitleCache)
       const batchTitles = batchTitleCache.get(folderKey) ?? new Set<string>()
       const allTaken = new Set<string>([...dbTitles, ...batchTitles])
 
-      const uniqueTitle = resolveUniqueTitle(file.originalname, allTaken)
+      const uniqueTitle = resolveUniqueTitle(originalName, allTaken)
       batchTitles.add(uniqueTitle.toLowerCase())
       batchTitleCache.set(folderKey, batchTitles)
 
-      // ── Stage for insertion ──────────────────────────────────────────────
       docsToInsert.push({
         user: userId,
         title: uniqueTitle,
@@ -274,11 +246,11 @@ export const uploadData = async (
         originalClientPath: originalPath,
         semanticPath: '/',
         folder: currentParentId,
-        tags: tags ? JSON.parse(tags) : []
+        tags: tags ? JSON.parse(tags) : [],
+        fileSize: file.size // ← added: capture raw bytes from multer
       })
     }
 
-    // Bulk-insert
     const createdDocs = await DocumentModel.insertMany(docsToInsert)
 
     // Update folder updatedAt dates
