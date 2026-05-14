@@ -3,12 +3,10 @@ import jwt from 'jsonwebtoken';
 import { User } from '../../features/users/user.model';
 import { AppError } from '../errors/AppError'; 
 
-// Define the shape of our JWT payload based on what we signed in auth.controller.ts
 interface JwtPayload {
   id: string;
 }
 
-// 🛠️ UPGRADE: Renamed from requireAuth to protect to match our routes!
 export const protect = async (
   req: Request,
   res: Response,
@@ -22,7 +20,6 @@ export const protect = async (
       req.headers.authorization &&
       req.headers.authorization.startsWith('Bearer')
     ) {
-      // Split "Bearer <token>" and grab just the token part
       token = req.headers.authorization.split(' ')[1];
     }
 
@@ -40,14 +37,16 @@ export const protect = async (
       return next(new AppError('The user belonging to this token no longer exists.', 401));
     }
 
-    // 5. SUCCESS! Attach the user object to the request.
-    // Now, any controller that runs AFTER this middleware can access req.user!
-    // (Note: This assumes you have defined req.user in your src/core/types/express.d.ts file)
+    // 5. Check if the user has been suspended by an admin
+    if (currentUser.isSuspended) {
+      return next(new AppError('Your account has been suspended. Please contact support.', 403));
+    }
+
+    // 6. SUCCESS! Attach the user object to the request.
     (req as any).user = currentUser; 
     next();
     
   } catch (error) {
-    // If jwt.verify fails (e.g., token expired or tampered with), it throws an error
     return next(new AppError('Invalid or expired token. Please log in again.', 401));
   }
 };
