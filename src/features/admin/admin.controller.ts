@@ -55,7 +55,7 @@ export const adminController = {
         return next(new AppError('suspend field must be a boolean', 400))
       }
 
-      const user = await adminService.toggleSuspend(id, suspend)
+      const user = await adminService.toggleSuspend(id, suspend) 
       res.status(200).json({
         success: true,
         message: `User ${suspend ? 'suspended' : 'unsuspended'} successfully`,
