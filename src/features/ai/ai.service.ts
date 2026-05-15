@@ -1,119 +1,423 @@
-import { DocumentModel, IDocument } from '../documents/document.model'
-import Folder, { IFolder } from '../folders/folder.model'
-import { ChatMessageModel } from './chat.model'
+import mongoose from 'mongoose'
+import { DocumentModel } from '../documents/document.model'
+import Folder from '../folders/folder.model'
+import { EmbeddingService } from './vector.service'
+import { OrchestratorService } from './orchestrator.service'
+import { PDFParse } from 'pdf-parse'
+import mammoth from 'mammoth'
+import { SynthesizerAgent } from './synthesizer.agent'
+import { VisualCortexService } from './visual-cortex.service'
+import { z } from 'zod'
+import { ChatOpenAI } from '@langchain/openai'
+import { BaseChatModel } from '@langchain/core/language_models/chat_models'
+import { SystemMessage, HumanMessage } from '@langchain/core/messages'
+import { CognitiveLoadService } from './cognitive-load.service'
+import { TokenBudgetService, estimateDocumentPipelineTokens } from '../../core/services/token-budget.service'
+
+// ─── Module-level default (production) ──────────────────────────────────────
+// The AI folder organizer model — instantiated once, never inside a method.
+const defaultOrganizerModel = new ChatOpenAI({
+  model: 'gpt-4o-mini',
+  temperature: 0.1
+})
 
 export class AIService {
-  // 1. Mock Chat
-  static async processChat(documentId: string, message: string) {
-    await new Promise((resolve) => setTimeout(resolve, 1500))
-    return {
-      reply: `This is a mocked AI response. In the real version, I will read the document and answer your prompt: "${message}"`,
-      insights: [
-        'The document focuses on modern tech stacks.',
-        'There are 3 main action items detected.'
-      ],
-      riskWarnings: ['Confidential data detected in paragraph 2.']
+  // ==========================================
+  // INJECTED MODEL (injectable for unit tests)
+  // ==========================================
+
+  private static _organizerModel: BaseChatModel = defaultOrganizerModel
+
+  /**
+   * Injection point — called by ModelRegistry at startup.
+   * In unit tests, inject a mock:
+   * @example AIService.init(mockOrganizerModel)
+   */
+  static init(organizerModel: BaseChatModel): void {
+    this._organizerModel = organizerModel
+  }
+
+  // ==========================================
+  // CORE RAG PIPELINE
+  // ==========================================
+
+  // 1. Generate Vector Embeddings
+  static async generateEmbedding(text: string): Promise<number[]> {
+    try {
+      const safeText = text.substring(0, 30000)
+      const embeddingModel = EmbeddingService.getEmbeddingsModel()
+
+      return await embeddingModel.embedQuery(safeText)
+    } catch (error) {
+      console.error('Failed to generate embedding:', error)
+      throw new Error('AI Embedding generation failed.')
     }
   }
 
-  // 2. Mock Comparison
-  static async compareDocs(doc1Id: string, doc2Id: string) {
-    await new Promise((resolve) => setTimeout(resolve, 2500))
-    return {
-      similarTopics: [
-        'Both files discuss project architecture and data flow.',
-        'Both emphasize user authentication.'
-      ],
-      differences: [
-        'File 1 focuses on Backend APIs (Node.js).',
-        'File 2 focuses on Frontend UI components (React).'
-      ],
-      uniqueDoc1: ['Mentions Mongoose schemas', 'Discusses JWT limits'],
-      uniqueDoc2: ['Mentions Tailwind CSS', 'Discusses Redux state']
+  // ==========================================
+  // BULK SYNTHESIS (Instructor Suggestion)
+  // ==========================================
+
+  static async synthesizeDocuments(documentIds: string[], userId: string): Promise<string> {
+    // 1. Fetch the documents, ensuring they belong to the requesting user
+    const documents = await DocumentModel.find({
+      _id: { $in: documentIds },
+      user: userId
+    })
+
+    if (!documents || documents.length === 0) {
+      throw new Error('No valid documents found for synthesis.')
+    }
+
+    // If only one document is selected, just return its existing summary
+    if (documents.length === 1) {
+      return documents[0].summary || 'No summary available for this document.'
+    }
+
+    // 2. Format the lightweight data for the LangChain Agent
+    const formattedData = documents
+      .map(
+        (doc, index) => `
+      Document ${index + 1}:
+      Title: ${doc.title || 'Unknown'}
+      Type: ${doc.fileType}
+      Tags: ${doc.tags?.join(', ')}
+      Summary: ${doc.summary}
+      ---
+    `
+      )
+      .join('\n')
+
+    // 3. Hand off to the Synthesizer Agent
+    console.log(`[Synthesizer] Synthesizing ${documents.length} documents...`)
+    const finalSummary = await SynthesizerAgent.generateBulkSummary(formattedData)
+
+    return finalSummary
+  }
+
+  // Background Worker
+  static async processPendingDocuments(documentIds: string[]): Promise<void> {
+    console.log(`[AI Worker] Started processing ${documentIds.length} documents...`)
+
+    for (const id of documentIds) {
+      try {
+        // 🛠️ Populate the user to grab their persona!
+        const doc = await DocumentModel.findById(id).populate('user')
+        if (!doc) continue
+
+        // Extract the persona (fallback to 'general' just in case)
+        const userPersona = (doc.user as any).persona || 'general'
+        await DocumentModel.findByIdAndUpdate(id, { aiStatus: 'Processing' })
+
+        let rawText = ''
+
+        // ==========================================
+        // 🧠 MULTIMODAL EXTRACTION ROUTER
+        // ==========================================
+        console.log(`[AI Worker] Extracting text for type: ${doc.fileType}...`)
+
+        switch (doc.fileType) {
+          case 'TextSnippet':
+            rawText = doc.extractedText || ''
+            break
+
+          case 'PDF':
+            if (!doc.cloudinaryUrl) throw new Error('PDF missing Cloudinary URL')
+            const pdfBuffer = await this.downloadFromCloudinary(doc.cloudinaryUrl)
+            const parser = new PDFParse({ data: pdfBuffer })
+            const pdfData = await parser.getText()
+            rawText = pdfData.text
+            break
+
+          case 'Word':
+            if (!doc.cloudinaryUrl) throw new Error('Word doc missing Cloudinary URL')
+            const wordBuffer = await this.downloadFromCloudinary(doc.cloudinaryUrl)
+            const wordData = await mammoth.extractRawText({ buffer: wordBuffer })
+            rawText = wordData.value
+            break
+
+          case 'Image':
+            if (!doc.cloudinaryUrl) throw new Error('Image missing Cloudinary URL')
+            console.log(`[AI Worker] Activating Visual Cortex for Image OCR...`)
+            const imageBuffer = await this.downloadFromCloudinary(doc.cloudinaryUrl)
+            const base64Data = imageBuffer.toString('base64')
+            rawText = await VisualCortexService.extractImageContent(base64Data, 'image/jpeg')
+            break
+
+          default:
+            throw new Error(`Unsupported file type: ${doc.fileType}`)
+        }
+
+        if (!rawText || rawText.trim().length === 0) {
+          throw new Error('No readable text found in document.')
+        }
+
+        // ==========================================
+        // 🚀 UNIFIED AI PIPELINE
+        // ==========================================
+
+        // 1. Run the LangGraph Orchestrator to extract structured metadata
+        console.log(`[AI Worker] Running Orchestrator Agent on document ${id}...`)
+        const metadata = await OrchestratorService.analyzeDocumentMetadata(id, rawText, userPersona)
+
+        // 🧠 2. NEW: Calculate deep Cognitive Load metrics
+        console.log(`[AI Worker] Evaluating Cognitive Load...`)
+        const loadMetrics = await CognitiveLoadService.evaluateText(rawText)
+
+        // 3. Embed the text into MongoDB Atlas Vector Search
+        console.log(`[AI Worker] Embedding chunks into Atlas...`)
+        await EmbeddingService.upsert(rawText, id, (doc.user as any)._id.toString())
+
+        // 4. Update the main document with success and new metadata
+        await DocumentModel.findByIdAndUpdate(id, {
+          extractedText: rawText,
+          aiStatus: 'Analyzed',
+          summary: metadata.summary,
+          tags: metadata.tags,
+
+          // 🛠️ THE FIX: Use the dedicated, detailed deep metrics here
+          cognitiveLoad: loadMetrics.load,
+          cognitiveScore: loadMetrics.score,
+          cognitiveReason: loadMetrics.reason,
+
+          contentType: metadata.type
+        })
+
+        console.log(
+          `[AI Worker] Document ${id} successfully analyzed, orchestrated, scored, and embedded.`
+        )
+
+        // 5. Record token usage for the budget system (fire-and-forget, non-blocking)
+        const estimatedTokens = estimateDocumentPipelineTokens(rawText)
+        TokenBudgetService.recordUsage(
+          (doc.user as any)._id.toString(),
+          estimatedTokens
+        ).catch((err) => console.error('[TokenBudget] Failed to record upload usage:', err))
+      } catch (error) {
+        console.error(`[AI Worker] Failed to process document ${id}:`, error)
+        await DocumentModel.findByIdAndUpdate(id, { aiStatus: 'Failed' })
+      }
     }
   }
 
-  // 3. Mock Folder Organization (The Proposal)
-  // 🛠️ THE FIX: Typed exactly to match the frontend Zod payload instead of the Database Model
+  /**
+   * Helper method to download a file from Cloudinary into a Node.js Buffer
+   * so that our parsers (pdf-parse, mammoth) can read it in memory.
+   */
+  private static async downloadFromCloudinary(url: string): Promise<Buffer> {
+    const response = await fetch(url)
+    const arrayBuffer = await response.arrayBuffer()
+    return Buffer.from(arrayBuffer)
+  }
+
+  // 3. AI Folder Organization (The Proposal)
   static async generateSemanticProposal(
     userId: string,
     documents: { _id?: string; id?: string; title: string }[]
   ) {
+    // 1. Get existing folder paths so the AI doesn't reinvent the wheel
     const existingPaths = await Folder.distinct('path', { user: userId })
-    await new Promise((resolve) => setTimeout(resolve, 3000))
 
-    return documents.map((doc) => {
-      let newPath = 'Miscellaneous'
-      // Safely fallback to an empty string if title is missing to prevent crashes
-      const titleLower = (doc.title || '').toLowerCase()
+    // 2. Extract IDs and fetch the rich semantic metadata from the DB!
+    const docIds = documents.map((d) => d._id || d.id).filter(Boolean) as string[]
+    const dbDocs = await DocumentModel.find({ _id: { $in: docIds }, user: userId }).select(
+      '_id title summary tags fileType contentType'
+    )
 
-      if (titleLower.includes('invoice') || titleLower.includes('tax')) {
-        newPath = existingPaths.includes('Finance/Invoices')
-          ? 'Finance/Invoices'
-          : 'Personal/Finance'
-      } else if (titleLower.includes('contract') || titleLower.includes('nda')) {
-        newPath = 'Work/Legal'
-      } else if (
-        titleLower.includes('png') ||
-        titleLower.includes('jpg') ||
-        titleLower.includes('image')
-      ) {
-        newPath = 'Media/Images'
-      }
+    if (dbDocs.length === 0) return []
 
-      // TypeScript is now perfectly happy with both _id and id!
-      return { documentId: doc._id || doc.id, newPath }
+    // 3. Force the AI to return a strict JSON array using Zod
+    const ProposalSchema = z.object({
+      updates: z.array(
+        z.object({
+          documentId: z.string().describe('The exact ID of the document'),
+          newPath: z
+            .string()
+            .describe(
+              "The proposed folder path (e.g., 'Finance/Invoices', 'Recipes/Desserts'). Use '/' for nesting."
+            )
+        })
+      )
     })
+
+    // 4. Bind the injected organizer model with structured output
+    // Base model is reused from module-level — only the schema binding is local
+    const llm = this._organizerModel.withStructuredOutput(ProposalSchema)
+
+    // 5. Prepare the payload (This is why your earlier Orchestrator work was brilliant)
+    const docPayload = dbDocs.map((doc) => ({
+      id: doc._id.toString(),
+      title: doc.title,
+      summary: doc.summary, // The AI actually knows what the document is about!
+      tags: doc.tags,
+      type: doc.contentType || doc.fileType
+    }))
+
+    // 6. Define the Librarian Rules
+    const systemPrompt = new SystemMessage(`
+      You are an elite digital librarian. 
+      Your task is to analyze a batch of uploaded documents and organize them into a clean, logical, hierarchical folder structure based on their semantic content.
+      
+      EXISTING FOLDER PATHS:
+      ${existingPaths.length > 0 ? existingPaths.join('\n') : 'No existing folders. You have a blank slate.'}
+      
+      RULES:
+      1. Reuse existing folder paths if they perfectly match the document's content.
+      2. If no existing folder fits, invent a new, highly logical nested path (e.g., "Health/Medical Records" or "Personal/Receipts").
+      3. Keep paths concise (maximum 3 levels deep).
+      4. Group similar documents together.
+    `)
+
+    const humanPrompt = new HumanMessage(JSON.stringify(docPayload, null, 2))
+
+    console.log(`[AI Organizer] Proposing folders for ${dbDocs.length} documents...`)
+
+    // 7. Invoke the model
+    const response = await llm.invoke([systemPrompt, humanPrompt])
+
+    // Returns perfectly structured: [{ documentId: "...", newPath: "..." }]
+    return response.updates
   }
 
-  // 4. The Final Boss: Recursive Folder Creation
-  // 🛠️ THE FIX: Replaced `any[]` with a strict structural type
+  // ==========================================
+  // PHYSICAL FOLDER ACTIONS
+  // ==========================================
+
+  // 4. Recursive Folder Creation (Optimized with Caching & BulkWrite)
   static async applyPhysicalFolders(
     userId: string,
     updates: { documentId: string; newPath: string }[]
   ) {
+    if (!updates || updates.length === 0) return
+
+    // 1. Pre-fetch existing folders into memory (O(1) lookups!)
+    const existingFolders = await Folder.find({ user: userId }).select('_id path')
+    const folderCache = new Map<string, string>()
+    existingFolders.forEach((folder) => {
+      folderCache.set(folder.path, folder._id.toString())
+    })
+
+    // Array to hold our document updates for a single Bulk transaction
+    const documentOperations = []
+
+    // 2. Process each AI proposal
     for (const update of updates) {
       const { documentId, newPath } = update
       if (!documentId || !newPath) continue
 
-      const pathParts = newPath.split('/').filter((p: string) => p.trim() !== '')
+      const pathParts = newPath.split('/').filter((p) => p.trim() !== '')
       let currentParentId = null
       let accumulatedPath = ''
 
       for (const part of pathParts) {
         accumulatedPath = accumulatedPath ? `${accumulatedPath}/${part}` : part
 
-        let folder: IFolder | null = await Folder.findOne({
-          name: part,
-          user: userId,
-          parentFolder: currentParentId
-        })
-
-        if (!folder) {
-          folder = await Folder.create({
-            name: part,
-            user: userId,
-            parentFolder: currentParentId,
-            path: accumulatedPath
-          })
+        // ⚡ CHECK MEMORY FIRST: If we already know this folder exists, skip the DB!
+        if (folderCache.has(accumulatedPath)) {
+          currentParentId = folderCache.get(accumulatedPath)
+          continue
         }
-        currentParentId = folder._id
+
+        // 🛡️ ATOMIC UPSERT: Find it, or create it safely if it doesn't exist
+        const upsertedFolder = (await Folder.findOneAndUpdate(
+          { name: part, user: userId, parentFolder: currentParentId },
+          {
+            $setOnInsert: {
+              name: part,
+              user: userId,
+              parentFolder: currentParentId,
+              path: accumulatedPath
+            }
+          },
+          { upsert: true, new: true } // Return the newly created/found doc
+        )) as any
+
+        currentParentId = upsertedFolder._id.toString()
+        // Save the new folder to our memory cache for the next document in the loop
+        folderCache.set(accumulatedPath, currentParentId)
       }
 
-      await DocumentModel.findByIdAndUpdate(documentId, {
-        folder: currentParentId,
-        semanticPath: newPath
+      // 3. Queue up the Document update
+      documentOperations.push({
+        updateOne: {
+          filter: { _id: documentId },
+          update: {
+            $set: {
+              folder: currentParentId,
+              semanticPath: newPath,
+              isOrganized: true // 🛠️ Hides the AI button on the frontend!
+            }
+          }
+        }
       })
+    }
+
+    // 4. Execute all document updates in ONE database round-trip
+    if (documentOperations.length > 0) {
+      await DocumentModel.bulkWrite(documentOperations)
+      console.log(
+        `[Folder Organizer] Successfully applied ${documentOperations.length} folder updates via BulkWrite.`
+      )
     }
   }
 
-  // 5. Fetch Chat History
-  static async getDocumentHistory(documentId: string, userId: string) {
-    const document = await DocumentModel.findOne({ _id: documentId, user: userId })
-    if (!document) return null // Let the controller handle the 404
+  // ==========================================
+  // SEMANTIC SEARCH (GLOBAL)
+  // ==========================================
 
-    return await ChatMessageModel.find({ documentId, user: userId })
-      .sort({ createdAt: 1 })
-      .select('role content createdAt -_id')
+  /**
+   * Performs a global semantic search across all documents owned by the user.
+   * STRICT SECURITY: preFilter completely isolates the vector space to the specific user.
+   */
+  static async semanticSearch(userId: string, query: string) {
+    // 🛠️ FIX 1: Added the missing 'await'
+    const vectorStore = await EmbeddingService.getVectorStore()
+
+    console.log(`[Global Search] Scanning vector space for user ${userId}...`)
+
+    // similaritySearchWithScore returns an array of tuples: [Document, score]
+    const results = await vectorStore.similaritySearchWithScore(query, 5, {
+      preFilter: {
+        // Keep it explicit with $eq just to be absolutely safe with Atlas Search
+        userId: { $eq: new mongoose.Types.ObjectId(userId) }
+      }
+    })
+
+    if (results.length === 0) return []
+
+    // 🛠️ FIX 2: Hydrate the results with actual Document metadata
+    // First, extract all unique document IDs from the vector results
+    const uniqueDocIds = [...new Set(results.map(([chunk]) => chunk.metadata.documentId))]
+
+    // Fetch the actual document titles and types from MongoDB
+    const actualDocuments = await DocumentModel.find({
+      _id: { $in: uniqueDocIds }
+    }).select('title fileType cloudinaryUrl')
+
+    // Create a lookup dictionary for blazing fast mapping
+    const docLookup = actualDocuments.reduce(
+      (acc, doc) => {
+        acc[doc._id.toString()] = doc
+        return acc
+      },
+      {} as Record<string, any>
+    )
+
+    // Map LangChain's raw output into a clean, hydrated frontend structure
+    return results.map(([chunk, score]) => {
+      const docId = chunk.metadata.documentId.toString()
+      const parentDoc = docLookup[docId]
+
+      return {
+        text: chunk.pageContent,
+        confidenceScore: Number((score * 100).toFixed(2)),
+        documentId: docId,
+        // Provide the frontend with the UI details it actually needs!
+        documentTitle: parentDoc?.title || 'Unknown Document',
+        documentType: parentDoc?.fileType || 'Unknown',
+        documentUrl: parentDoc?.cloudinaryUrl || null,
+        chunkIndex: chunk.metadata.chunkIndex
+      }
+    })
   }
 }

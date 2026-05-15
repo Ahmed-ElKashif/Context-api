@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import { AppError } from '../../core/errors/AppError'
 import { DocumentService } from './document.service'
+import { DocumentModel } from './document.model'
 
 // @route   GET /api/documents
 export const getAllDocuments = async (
@@ -98,12 +99,32 @@ export const updateDocument = async (
   try {
     const userId = req.user?._id?.toString()
     if (!userId) return next(new AppError('Unauthorized', 401))
+
     const id = req.params?.id
     if (typeof id !== 'string') {
       return next(new AppError('Invalid document ID', 400))
     }
 
-    const document = await DocumentService.updateById(userId, id, req.body)
+    // ==========================================
+    // 🛡️ SECURITY: Data Sanitization (Prevent Mass Assignment)
+    // ==========================================
+    // Extract ONLY the fields the user is explicitly allowed to edit manually.
+    const { title, tags, summary, cognitiveLoad, folder } = req.body
+
+    // Remove any undefined fields so we don't accidentally overwrite DB fields with nulls
+    const safeUpdates = Object.fromEntries(
+      Object.entries({ title, tags, summary, cognitiveLoad, folder }).filter(
+        ([_, value]) => value !== undefined
+      )
+    )
+
+    // Stop early if no valid fields were sent
+    if (Object.keys(safeUpdates).length === 0) {
+      return next(new AppError('No valid fields provided for update', 400))
+    }
+
+    // Pass ONLY the sanitized object to the service
+    const document = await DocumentService.updateById(userId, id, safeUpdates)
 
     if (!document) {
       return next(new AppError('Document not found or unauthorized', 404))
@@ -240,3 +261,55 @@ export const serveDocumentFile = async (
     next(error)
   }
 }
+
+export const getDocumentChatHistory = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string
+    const userId = (req as any).user._id.toString()
+
+    // Security: Ensure doc belongs to user
+    const docExists = await DocumentModel.exists({ _id: id, user: userId })
+    if (!docExists) {
+      res.status(404).json({ success: false, message: 'Document not found' })
+      return
+    }
+
+    const history = await DocumentService.getDocumentChatHistory(id, userId)
+
+    res.status(200).json({ success: true, count: history.length, data: history })
+  } catch (error: any) {
+    console.error('[Document Controller] Error fetching history:', error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+}
+
+export const chatWithDocument = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const id = req.params.id as string
+    const { message } = req.body
+    const userId = (req as any).user._id.toString()
+
+    if (!message) {
+      res.status(400).json({ success: false, message: 'Message is required' })
+      return
+    }
+
+    // Security: Ensure doc belongs to user
+    const docExists = await DocumentModel.exists({ _id: id, user: userId })
+    if (!docExists) {
+      res.status(404).json({ success: false, message: 'Document not found' })
+      return
+    }
+
+    const aiResponse = await DocumentService.chatWithDocument(id, userId, message)
+
+    res.status(200).json({
+      success: true,
+      data: { role: 'ai', content: aiResponse }
+    })
+  } catch (error: any) {
+    console.error('[Document Controller] Error in RAG chat:', error)
+    res.status(500).json({ success: false, message: error.message })
+  }
+}
+

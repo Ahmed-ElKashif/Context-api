@@ -51,14 +51,30 @@ app.use(express.json({ limit: '10kb' })) // Prevents massive payload attacks
 app.use(analyticsMiddleware) 
 
 // ==========================================
-// ⚙️ 2. UTILITY MIDDLEWARES
+// ⚡ 2. LOGGING (Morgan)
 // ==========================================
 
-// Log HTTP requests in development
-if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'))
-}
+// Custom token: color-coded status emoji
+morgan.token('status-emoji', (_req, res) => {
+  const s = res.statusCode
+  if (s >= 500) return '🔴' // Server error
+  if (s >= 400) return '🟡' // Client error
+  if (s >= 300) return '🔵' // Redirect
+  return '🟢'               // Success
+})
 
+// Dev format: emoji + method + url + status + response time
+const devFormat = ':status-emoji  :method :url :status - :response-time ms'
+
+// Production format: standard combined log (good for log aggregators)
+const prodFormat = ':remote-addr - :method :url :status :res[content-length] - :response-time ms'
+
+app.use(
+  morgan(process.env.NODE_ENV === 'production' ? prodFormat : devFormat, {
+    // Never log the health check — it's called every few seconds and is pure noise
+    skip: (req) => req.url === '/api/health'
+  })
+)
 
 // ==========================================
 // 🚀 3. ROUTES

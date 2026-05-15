@@ -1,38 +1,55 @@
 import { Router } from 'express'
 import { protect } from '../../core/middlewares/auth.middleware'
-import { validate } from '../../core/middlewares/validate.middleware' // 🛠️ NEW: Import Validator
-
+import { validate } from '../../core/middlewares/validate.middleware'
+import { checkTokenBudget } from '../../core/middlewares/token-budget.middleware'
+import { aiLogger } from '../../core/middlewares/ai-logger.middleware'
+import { synthesizeDocuments } from './ai.controller'
 import {
-  askAISchema,
   generateSemanticStructureSchema,
   applySemanticFoldersSchema,
-  chatHistoryParamsSchema
-} from './ai.schema' // 🛠️ NEW: Import Schemas
+  semanticSearchSchema,
+  synthesizeDocumentsSchema
+} from './ai.schema'
 
-import {
-  askAI,
-  generateSemanticStructure,
-  applySemanticFolders,
-  getDocumentChatHistory
-} from './ai.controller'
+import { generateSemanticStructure, applySemanticFolders, searchDocuments } from './ai.controller'
 
 const router = Router()
 
-// Protect AI routes
+// Protect all AI routes
 router.use(protect)
 
-// 💬 Chat Endpoints
-router.post('/chat', validate(askAISchema), askAI)
-router.get('/chat/:documentId', validate(chatHistoryParamsSchema), getDocumentChatHistory)
+// ==========================================
+// 🧠 GLOBAL AI ACTIONS
+// ==========================================
 
-// 🧠 Organize Folders (Generate Proposal)
+// 🧠 Organize Folders — Generate Proposal
 router.post(
   '/organize-folder',
+  checkTokenBudget,
+  aiLogger,
   validate(generateSemanticStructureSchema),
   generateSemanticStructure
 )
 
-// 📁 Apply Folders (Physical DB updates)
+// 📁 Apply Folders — Physical DB updates (no AI call, no budget needed)
 router.put('/apply-folders', validate(applySemanticFoldersSchema), applySemanticFolders)
+
+// 🔍 Semantic Search — Global vector search
+router.get(
+  '/search',
+  checkTokenBudget,
+  aiLogger,
+  validate(semanticSearchSchema),
+  searchDocuments
+)
+
+// 🧠 Bulk Synthesis — Combine multiple documents
+router.post(
+  '/synthesize',
+  checkTokenBudget,
+  aiLogger,
+  validate(synthesizeDocumentsSchema),
+  synthesizeDocuments
+)
 
 export default router

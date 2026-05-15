@@ -1,6 +1,8 @@
 import { Request, Response, NextFunction } from 'express'
 import { FolderService } from './folder.service'
 import { AppError } from '../../core/errors/AppError'
+import { FolderProposerService } from '../ai/folder-proposer.service'
+import { estimateTokens } from '../../core/services/token-budget.service'
 
 export const createFolder = async (
   req: Request,
@@ -166,3 +168,54 @@ export const getFolderTree = async (
     next(error)
   }
 }
+
+/**
+ * Proposes a semantic folder tree for ALL of the user's analyzed documents.
+ * Pure read — no DB writes. Use /apply-folders to commit the proposal.
+ * @route POST /api/folders/propose
+ */
+export const proposeSemanticFolders = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id?.toString() || (req as any).user?.id
+    if (!userId) return next(new AppError('Unauthorized', 401))
+
+    const { tree, documentCount, wasCapped } = await FolderProposerService.proposeStructure(userId)
+
+    if (tree.length === 0) {
+      res.status(200).json({
+        success: true,
+        message:
+          'Not enough analyzed documents to generate a proposal. Upload and analyze at least 2 documents first.',
+        data: { tree: [], documentCount }
+      })
+      return
+    }
+
+    // Estimate tokens: each doc entry ~300 chars + system prompt overhead
+    const estimatedInputTokens = documentCount * 300 + 800
+    res.locals.aiMeta = {
+      model: 'gpt-4o-mini',
+      tokensUsed: estimateTokens(String(estimatedInputTokens * 4)), // convert chars back
+      operation: 'folder-propose'
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Proposed ${tree.length} top-level folder${tree.length !== 1 ? 's' : ''} for ${documentCount} document${documentCount !== 1 ? 's' : ''}.`,
+      data: {
+        tree,
+        documentCount,
+        wasCapped,
+        ...(wasCapped && {
+          capWarning: 'Only the 100 most recently analyzed documents were included in this proposal.'
+        })
+      }
+    })
+  } catch (error) {
+    next(error)
+  }
+}

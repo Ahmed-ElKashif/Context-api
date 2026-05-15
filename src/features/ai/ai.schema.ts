@@ -44,3 +44,16 @@ export const chatHistoryParamsSchema = z.object({
     documentId: z.string().length(24, 'Invalid Document ID format in URL')
   })
 })
+
+// 🔍 Validate URL Params for Chat History
+export const semanticSearchSchema = z.object({
+  query: z.object({
+    q: z.string({ required_error: 'Search query string (q) is required' }).min(2)
+  })
+})
+
+export const synthesizeDocumentsSchema = z.object({
+  body: z.object({
+    documentIds: z.array(z.string()).min(1, 'You must provide at least one document ID to analyze.')
+  })
+})

@@ -43,7 +43,7 @@ export const protect = async (
     }
 
     // 6. SUCCESS! Attach the user object to the request.
-    (req as any).user = currentUser; 
+    req.user = currentUser; 
     next();
     
   } catch (error) {

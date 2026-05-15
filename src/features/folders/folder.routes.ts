@@ -1,15 +1,18 @@
 import { Router } from 'express'
 import { protect } from '../../core/middlewares/auth.middleware'
-import { validate } from '../../core/middlewares/validate.middleware' // 🛠️ NEW: Zod Validator
+import { validate } from '../../core/middlewares/validate.middleware'
+import { checkTokenBudget } from '../../core/middlewares/token-budget.middleware'
+import { aiLogger } from '../../core/middlewares/ai-logger.middleware'
 
-import { createFolderSchema, updateFolderSchema } from './folder.schema' // 🛠️ NEW: Import Schemas
+import { createFolderSchema, updateFolderSchema } from './folder.schema'
 
 import {
   createFolder,
   getFolderContents,
   renameFolder,
   deleteFolder,
-  getFolderTree
+  getFolderTree,
+  proposeSemanticFolders
 } from './folder.controller'
 
 const router = Router()
@@ -23,6 +26,9 @@ router.use(protect)
 
 // 📁 Create a folder (Validated)
 router.post('/', validate(createFolderSchema), createFolder)
+
+// 🤖 Propose semantic folder tree for ALL user documents (AI)
+router.post('/propose', checkTokenBudget, aiLogger, proposeSemanticFolders)
 
 // 🌳 Global Tree
 router.get('/tree', getFolderTree)

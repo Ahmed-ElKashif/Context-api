@@ -1,8 +1,18 @@
 import { DocumentModel, IDocument } from './document.model'
 import Folder from '../folders/folder.model'
 import { configureCloudinary } from '../../config/cloudinary'
+import { ChatOpenAI } from '@langchain/openai'
+import { BaseChatModel } from '@langchain/core/language_models/chat_models'
+import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages'
+import { ChatMessageModel } from '../ai/chat.model'
+import { EmbeddingService } from '../ai/vector.service'
+import mongoose from 'mongoose'
 
 const cloudinary = configureCloudinary()
+
+// ─── Module-level default (production) ──────────────────────────────────────
+// Instantiated once per process — never inside a method.
+const defaultChatModel = new ChatOpenAI({ model: 'gpt-4o-mini', temperature: 0.2 })
 
 /**
  * Cloudinary stores images and PDFs under the 'image' resource type when uploaded with 'auto'.
@@ -14,7 +24,17 @@ const getResourceType = (fileType: string): 'image' | 'raw' => {
 }
 
 export class DocumentService {
-  // 1. Fetch All with Advanced Filters & Pagination
+  // ─── Injected Chat Model (injectable for unit tests) ───────────────────────
+  private static _chatModel: BaseChatModel = defaultChatModel
+
+  /**
+   * Injection point — called by ModelRegistry at startup.
+   * In unit tests: DocumentService.init(mockModel as any)
+   */
+  static init(chatModel: BaseChatModel): void {
+    this._chatModel = chatModel
+  }
+
   static async getAll(
     userId: string,
     filters: any,
@@ -127,12 +147,12 @@ export class DocumentService {
     if (document.cloudinaryPublicId) {
       const resourceType = getResourceType(document.fileType)
       await cloudinary.uploader.destroy(document.cloudinaryPublicId, {
-        resource_type: resourceType,
+        resource_type: resourceType
       })
     }
 
     // 🛠️ Store the folder ID before we delete the document
-    const folderId = document.folder;
+    const folderId = document.folder
 
     await document.deleteOne()
 
@@ -155,13 +175,15 @@ export class DocumentService {
         .filter((doc) => doc.cloudinaryPublicId)
         .map((doc) =>
           cloudinary.uploader.destroy(doc.cloudinaryPublicId!, {
-            resource_type: getResourceType(doc.fileType),
+            resource_type: getResourceType(doc.fileType)
           })
         )
     )
 
     // 🛠️ Collect all unique folder IDs that these documents belong to
-    const folderIdsToUpdate = [...new Set(documents.map(doc => doc.folder).filter(id => id !== null))]
+    const folderIdsToUpdate = [
+      ...new Set(documents.map((doc) => doc.folder).filter((id) => id !== null))
+    ]
 
     const result = await DocumentModel.deleteMany(query)
 
@@ -187,5 +209,79 @@ export class DocumentService {
     const document = await DocumentModel.findOne({ _id: docId, user: userId })
     if (!document || !document.cloudinaryUrl) return null
     return document.cloudinaryUrl
+  }
+
+  /**
+   * Fetches the chat history for a specific document and user
+   */
+  static async getDocumentChatHistory(documentId: string, userId: string) {
+    return await ChatMessageModel.find({ documentId, user: userId })
+      .sort({ createdAt: 1 }) // Ascending order for frontend UIs
+      .select('role content createdAt -_id')
+      .exec()
+  }
+
+  /**
+   * Performs a vector search and generates an AI response
+   */
+  static async chatWithDocument(
+    documentId: string,
+    userId: string,
+    query: string
+  ): Promise<string> {
+    const llm = this._chatModel  // ← uses injected singleton, never constructs inline
+    const vectorStore = await EmbeddingService.getVectorStore()
+
+    // 1. Retrieve Context
+    const retriever = vectorStore.asRetriever({
+      k: 5,
+      filter: {
+        preFilter: {
+          // 🛠️ THE FIX: Cast the strings back to MongoDB ObjectIds!
+          documentId: { $eq: new mongoose.Types.ObjectId(documentId) },
+          userId: { $eq: new mongoose.Types.ObjectId(userId) }
+        }
+      }
+    })
+
+    const relevantChunks = await retriever.invoke(query)
+    const contextText = relevantChunks.map((chunk) => chunk.pageContent).join('\n\n---\n\n')
+
+    if (!contextText) {
+      return "I couldn't find any relevant information in this document to answer your question."
+    }
+
+    // 2. Fetch recent conversation memory
+    const history = await ChatMessageModel.find({ documentId, user: userId })
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .exec()
+
+    const formattedHistory = history
+      .reverse()
+      .map((msg) =>
+        msg.role === 'user' ? new HumanMessage(msg.content) : new AIMessage(msg.content)
+      )
+
+    // 3. Generate Answer
+    const systemPrompt = new SystemMessage(`
+      You are an elite, helpful AI assistant. 
+      Answer the user's question using ONLY the context provided below. 
+      If the answer is not contained in the context, do not guess—simply state that you do not know.
+      
+      CONTEXT:
+      ${contextText}
+    `)
+
+    const response = await llm.invoke([systemPrompt, ...formattedHistory, new HumanMessage(query)])
+    const aiResponseText = (response.content as string).trim()
+
+    // 4. Save to Database
+    await ChatMessageModel.insertMany([
+      { documentId, user: userId, role: 'user', content: query }, // 🛠️ Fixed
+      { documentId, user: userId, role: 'assistant', content: aiResponseText } // 🛠️ Fixed
+    ])
+
+    return aiResponseText
   }
 }
