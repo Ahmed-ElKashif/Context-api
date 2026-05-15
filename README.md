@@ -2,21 +2,7 @@
 
 <!-- ═══════════════════════════════ LOGO ═══════════════════════════════ -->
 
-<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" width="96" height="96">
-  <!-- top-left node + wire -->
-  <circle cx="30" cy="30" r="6" fill="#6B7280" opacity="0.7"/>
-  <path d="M30 30 C 30 30, 45 45, 50 50" stroke="#6B7280" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
-  <!-- top-right node + wire -->
-  <circle cx="70" cy="30" r="6" fill="#6B7280" opacity="0.7"/>
-  <path d="M70 30 C 70 30, 55 45, 50 50" stroke="#6B7280" stroke-width="3" stroke-linecap="round" opacity="0.5"/>
-  <!-- bottom node + wire -->
-  <circle cx="50" cy="80" r="6" fill="#7C3AED" opacity="0.8"/>
-  <path d="M50 80 C 50 80, 50 65, 50 50" stroke="#7C3AED" stroke-width="3" stroke-linecap="round" opacity="0.6"/>
-  <!-- core node — pulsing ring -->
-  <circle cx="50" cy="50" r="10" stroke="#4F46E5" stroke-width="2" opacity="0.5"/>
-  <!-- core node — solid -->
-  <circle cx="50" cy="50" r="6" fill="#4F46E5"/>
-</svg>
+<img src="./docs/logo.svg" width="96" height="96" alt="Context Logo" />
 
 <h1>Context API</h1>
 
@@ -584,16 +570,7 @@ The logo (`ContextLogo.tsx`) is a three-node neural graph — two input nodes me
 
 <div align="center">
 
-<svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" width="48" height="48">
-  <circle cx="30" cy="30" r="6" fill="#6B7280" opacity="0.5"/>
-  <path d="M30 30 C 30 30, 45 45, 50 50" stroke="#6B7280" stroke-width="3" stroke-linecap="round" opacity="0.3"/>
-  <circle cx="70" cy="30" r="6" fill="#6B7280" opacity="0.5"/>
-  <path d="M70 30 C 70 30, 55 45, 50 50" stroke="#6B7280" stroke-width="3" stroke-linecap="round" opacity="0.3"/>
-  <circle cx="50" cy="80" r="6" fill="#7C3AED" opacity="0.6"/>
-  <path d="M50 80 C 50 80, 50 65, 50 50" stroke="#7C3AED" stroke-width="3" stroke-linecap="round" opacity="0.4"/>
-  <circle cx="50" cy="50" r="10" stroke="#4F46E5" stroke-width="2" opacity="0.4"/>
-  <circle cx="50" cy="50" r="6" fill="#4F46E5"/>
-</svg>
+<img src="./docs/logo.svg" width="48" height="48" alt="Context Logo" />
 
 **Built with ❤️ by 🧠 Contexters — ITI ITP R2 2026**
 
