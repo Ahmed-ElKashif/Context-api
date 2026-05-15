@@ -1,18 +1,46 @@
 import { ChatOpenAI } from '@langchain/openai'
+import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { HumanMessage } from '@langchain/core/messages'
 
+// ─── Module-level defaults (production) ─────────────────────────────────────
+
+// PRIMARY: Groq Llama Vision via OpenAI-compatible URL
+const defaultPrimaryVisionModel = new ChatOpenAI({
+  apiKey: process.env.GROQ_API_KEY,
+  configuration: {
+    baseURL: 'https://api.groq.com/openai/v1'
+  },
+  model: process.env.GROQ_VIRTUAL_CORTEX_MODEL || 'llama-3.2-11b-vision-preview',
+  temperature: 0.1,
+  maxRetries: 1 // Fail fast — if Groq hiccups, jump to OpenAI immediately
+})
+
+// FALLBACK: Official OpenAI gpt-4o-mini
+const defaultFallbackVisionModel = new ChatOpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  model: 'gpt-4o-mini',
+  temperature: 0.1,
+  maxRetries: 2
+})
+
 export class VisualCortexService {
-  // 🛠️ THE ULTIMATE PIVOT: Groq is "OpenAI Compatible".
-  // We use the flawless LangChain OpenAI wrapper, but point it at Groq's servers!
-  private static visionModel = new ChatOpenAI({
-    apiKey: process.env.GROQ_API_KEY, // Pass your Groq key here!
-    configuration: {
-      baseURL: 'https://api.groq.com/openai/v1' // 🏴‍☠️ Hijack the URL to hit Groq!
-    },
-    modelName: 'meta-llama/llama-4-scout-17b-16e-instruct',
-    temperature: 0.1,
-    maxRetries: 2
-  })
+  // ==========================================
+  // INJECTED MODELS (injectable for unit tests)
+  // ==========================================
+
+  private static _primary: BaseChatModel = defaultPrimaryVisionModel
+  private static _fallback: BaseChatModel = defaultFallbackVisionModel
+
+  /**
+   * Injection point — called by ModelRegistry at startup.
+   * In unit tests, inject mocks:
+   * @example
+   * VisualCortexService.init(mockPrimary, mockFallback)
+   */
+  static init(primary: BaseChatModel, fallback: BaseChatModel): void {
+    this._primary = primary
+    this._fallback = fallback
+  }
 
   /**
    * Processes an image to extract OCR text or provide a fallback description.
@@ -27,7 +55,6 @@ export class VisualCortexService {
     
     Return ONLY the extracted text or the short description. Do not add any conversational filler.`
 
-    // Construct the Multimodal block using the standard OpenAI format
     const message = new HumanMessage({
       content: [
         {
@@ -36,15 +63,40 @@ export class VisualCortexService {
         },
         {
           type: 'image_url',
-          image_url: { url: `data:${mimeType};base64,${base64Image}` } // Safe standard format
+          image_url: { url: `data:${mimeType};base64,${base64Image}` }
         }
       ]
     })
 
-    console.log(`[Visual Cortex] Sending image to Groq Llama 3.2 Vision (via OpenAI Wrapper)...`)
+    // ==========================================
+    // ATTEMPT 1: Groq Llama Vision
+    // ==========================================
+    try {
+      console.log(`[Visual Cortex] Attempt 1: Sending image to Groq Llama Vision...`)
 
-    const response = await this.visionModel.invoke([message])
+      const response = await this._primary.invoke([message])
+      return (response.content as string).trim()
+    } catch (primaryError) {
+      console.warn(`[Visual Cortex] ⚠️ Groq Vision failed. Triggering gpt-4o-mini fallback...`)
+      console.error(
+        `[Visual Cortex Error Details]:`,
+        primaryError instanceof Error ? primaryError.message : 'Unknown Error'
+      )
 
-    return (response.content as string).trim()
+      // ==========================================
+      // ATTEMPT 2: OpenAI gpt-4o-mini
+      // ==========================================
+      try {
+        console.log(`[Visual Cortex] Attempt 2: Sending image to OpenAI gpt-4o-mini...`)
+
+        const fallbackResponse = await this._fallback.invoke([message])
+        return (fallbackResponse.content as string).trim()
+      } catch (fallbackError) {
+        console.error(`[Visual Cortex] 🚨 FATAL: Both Groq and OpenAI Vision models failed.`)
+        throw new Error(
+          'Our OCR engines are currently experiencing high traffic. Please try uploading the image again.'
+        )
+      }
+    }
   }
 }

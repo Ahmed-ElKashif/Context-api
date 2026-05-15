@@ -2,11 +2,17 @@ import { DocumentModel, IDocument } from './document.model'
 import Folder from '../folders/folder.model'
 import { configureCloudinary } from '../../config/cloudinary'
 import { ChatOpenAI } from '@langchain/openai'
+import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages'
-import { ChatMessageModel } from '../ai/chat.model' // Ensure you created this model earlier!
+import { ChatMessageModel } from '../ai/chat.model'
 import { EmbeddingService } from '../ai/vector.service'
 import mongoose from 'mongoose'
+
 const cloudinary = configureCloudinary()
+
+// ─── Module-level default (production) ──────────────────────────────────────
+// Instantiated once per process — never inside a method.
+const defaultChatModel = new ChatOpenAI({ model: 'gpt-4o-mini', temperature: 0.2 })
 
 /**
  * Cloudinary stores images and PDFs under the 'image' resource type when uploaded with 'auto'.
@@ -18,7 +24,17 @@ const getResourceType = (fileType: string): 'image' | 'raw' => {
 }
 
 export class DocumentService {
-  // 1. Fetch All with Advanced Filters & Pagination
+  // ─── Injected Chat Model (injectable for unit tests) ───────────────────────
+  private static _chatModel: BaseChatModel = defaultChatModel
+
+  /**
+   * Injection point — called by ModelRegistry at startup.
+   * In unit tests: DocumentService.init(mockModel as any)
+   */
+  static init(chatModel: BaseChatModel): void {
+    this._chatModel = chatModel
+  }
+
   static async getAll(
     userId: string,
     filters: any,
@@ -213,7 +229,7 @@ export class DocumentService {
     userId: string,
     query: string
   ): Promise<string> {
-    const llm = new ChatOpenAI({ modelName: 'gpt-4o-mini', temperature: 0.2 })
+    const llm = this._chatModel  // ← uses injected singleton, never constructs inline
     const vectorStore = await EmbeddingService.getVectorStore()
 
     // 1. Retrieve Context

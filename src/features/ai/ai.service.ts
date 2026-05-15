@@ -1,17 +1,42 @@
 import mongoose from 'mongoose'
 import { DocumentModel } from '../documents/document.model'
-import Folder, { IFolder } from '../folders/folder.model'
+import Folder from '../folders/folder.model'
 import { EmbeddingService } from './vector.service'
-import { OrchestratorAgent } from './orchestrator.agent'
+import { OrchestratorService } from './orchestrator.service'
 import { PDFParse } from 'pdf-parse'
 import mammoth from 'mammoth'
 import { SynthesizerAgent } from './synthesizer.agent'
 import { VisualCortexService } from './visual-cortex.service'
 import { z } from 'zod'
 import { ChatOpenAI } from '@langchain/openai'
+import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { SystemMessage, HumanMessage } from '@langchain/core/messages'
+import { CognitiveLoadService } from './cognitive-load.service'
+import { TokenBudgetService, estimateDocumentPipelineTokens } from '../../core/services/token-budget.service'
+
+// ─── Module-level default (production) ──────────────────────────────────────
+// The AI folder organizer model — instantiated once, never inside a method.
+const defaultOrganizerModel = new ChatOpenAI({
+  model: 'gpt-4o-mini',
+  temperature: 0.1
+})
 
 export class AIService {
+  // ==========================================
+  // INJECTED MODEL (injectable for unit tests)
+  // ==========================================
+
+  private static _organizerModel: BaseChatModel = defaultOrganizerModel
+
+  /**
+   * Injection point — called by ModelRegistry at startup.
+   * In unit tests, inject a mock:
+   * @example AIService.init(mockOrganizerModel)
+   */
+  static init(organizerModel: BaseChatModel): void {
+    this._organizerModel = organizerModel
+  }
+
   // ==========================================
   // CORE RAG PIPELINE
   // ==========================================
@@ -76,7 +101,7 @@ export class AIService {
 
     for (const id of documentIds) {
       try {
-        // 🛠️ THE FIX: Populate the user to grab their persona!
+        // 🛠️ Populate the user to grab their persona!
         const doc = await DocumentModel.findById(id).populate('user')
         if (!doc) continue
 
@@ -93,7 +118,6 @@ export class AIService {
 
         switch (doc.fileType) {
           case 'TextSnippet':
-            // Frictionless Capture: Already in DB, bypass downloading entirely!
             rawText = doc.extractedText || ''
             break
 
@@ -114,15 +138,9 @@ export class AIService {
 
           case 'Image':
             if (!doc.cloudinaryUrl) throw new Error('Image missing Cloudinary URL')
-            console.log(`[AI Worker] Activating Gemini Flash Visual Cortex for Image OCR...`)
-
-            // 1. Download the image from Cloudinary into a buffer
+            console.log(`[AI Worker] Activating Visual Cortex for Image OCR...`)
             const imageBuffer = await this.downloadFromCloudinary(doc.cloudinaryUrl)
-
-            // 2. Convert the buffer to a base64 string
             const base64Data = imageBuffer.toString('base64')
-
-            // 3. Hand off to the Visual Cortex!
             rawText = await VisualCortexService.extractImageContent(base64Data, 'image/jpeg')
             break
 
@@ -140,24 +158,41 @@ export class AIService {
 
         // 1. Run the LangGraph Orchestrator to extract structured metadata
         console.log(`[AI Worker] Running Orchestrator Agent on document ${id}...`)
-        const metadata = await OrchestratorAgent.analyzeDocumentMetadata(id, rawText, userPersona)
-        // 2. Embed the text into MongoDB Atlas Vector Search
+        const metadata = await OrchestratorService.analyzeDocumentMetadata(id, rawText, userPersona)
+
+        // 🧠 2. NEW: Calculate deep Cognitive Load metrics
+        console.log(`[AI Worker] Evaluating Cognitive Load...`)
+        const loadMetrics = await CognitiveLoadService.evaluateText(rawText)
+
+        // 3. Embed the text into MongoDB Atlas Vector Search
         console.log(`[AI Worker] Embedding chunks into Atlas...`)
-        // 🛠️ THE FIX: Grab the _id from the populated user object!
         await EmbeddingService.upsert(rawText, id, (doc.user as any)._id.toString())
 
-        // 3. Update the main document with success and new metadata
+        // 4. Update the main document with success and new metadata
         await DocumentModel.findByIdAndUpdate(id, {
           extractedText: rawText,
           aiStatus: 'Analyzed',
           summary: metadata.summary,
           tags: metadata.tags,
-          cognitiveLoad: metadata.cognitiveLoad,
-          // 🛠️ THE FIX: Save the physical type and semantic type safely and separately!
+
+          // 🛠️ THE FIX: Use the dedicated, detailed deep metrics here
+          cognitiveLoad: loadMetrics.load,
+          cognitiveScore: loadMetrics.score,
+          cognitiveReason: loadMetrics.reason,
+
           contentType: metadata.type
         })
 
-        console.log(`[AI Worker] Document ${id} successfully analyzed, orchestrated, and embedded.`)
+        console.log(
+          `[AI Worker] Document ${id} successfully analyzed, orchestrated, scored, and embedded.`
+        )
+
+        // 5. Record token usage for the budget system (fire-and-forget, non-blocking)
+        const estimatedTokens = estimateDocumentPipelineTokens(rawText)
+        TokenBudgetService.recordUsage(
+          (doc.user as any)._id.toString(),
+          estimatedTokens
+        ).catch((err) => console.error('[TokenBudget] Failed to record upload usage:', err))
       } catch (error) {
         console.error(`[AI Worker] Failed to process document ${id}:`, error)
         await DocumentModel.findByIdAndUpdate(id, { aiStatus: 'Failed' })
@@ -173,27 +208,6 @@ export class AIService {
     const response = await fetch(url)
     const arrayBuffer = await response.arrayBuffer()
     return Buffer.from(arrayBuffer)
-  }
-
-  // ==========================================
-  // MOCKED FEATURES (TO BE UPGRADED)
-  // ==========================================
-
-  // 2. Mock Comparison
-  static async compareDocs(doc1Id: string, doc2Id: string) {
-    await new Promise((resolve) => setTimeout(resolve, 2500))
-    return {
-      similarTopics: [
-        'Both files discuss project architecture and data flow.',
-        'Both emphasize user authentication.'
-      ],
-      differences: [
-        'File 1 focuses on Backend APIs (Node.js).',
-        'File 2 focuses on Frontend UI components (React).'
-      ],
-      uniqueDoc1: ['Mentions Mongoose schemas', 'Discusses JWT limits'],
-      uniqueDoc2: ['Mentions Tailwind CSS', 'Discusses Redux state']
-    }
   }
 
   // 3. AI Folder Organization (The Proposal)
@@ -226,11 +240,9 @@ export class AIService {
       )
     })
 
-    // 4. Initialize the LLM with the Structured Output tool
-    const llm = new ChatOpenAI({
-      modelName: 'gpt-4o-mini',
-      temperature: 0.1 // Very low temp so it categorizes logically and consistently
-    }).withStructuredOutput(ProposalSchema)
+    // 4. Bind the injected organizer model with structured output
+    // Base model is reused from module-level — only the schema binding is local
+    const llm = this._organizerModel.withStructuredOutput(ProposalSchema)
 
     // 5. Prepare the payload (This is why your earlier Orchestrator work was brilliant)
     const docPayload = dbDocs.map((doc) => ({
@@ -307,7 +319,7 @@ export class AIService {
         }
 
         // 🛡️ ATOMIC UPSERT: Find it, or create it safely if it doesn't exist
-        const upsertedFolder = await Folder.findOneAndUpdate(
+        const upsertedFolder = (await Folder.findOneAndUpdate(
           { name: part, user: userId, parentFolder: currentParentId },
           {
             $setOnInsert: {
@@ -318,7 +330,7 @@ export class AIService {
             }
           },
           { upsert: true, new: true } // Return the newly created/found doc
-        ) as any
+        )) as any
 
         currentParentId = upsertedFolder._id.toString()
         // Save the new folder to our memory cache for the next document in the loop

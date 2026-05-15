@@ -1,14 +1,11 @@
 import { Router } from 'express'
 import { protect } from '../../core/middlewares/auth.middleware'
-import { validate } from '../../core/middlewares/validate.middleware' // 🛠️ NEW: Zod Validation Middleware
+import { validate } from '../../core/middlewares/validate.middleware'
 import { uploadMemory } from '../../core/middlewares/upload.middleware'
+import { checkTokenBudget } from '../../core/middlewares/token-budget.middleware'
 import { uploadData } from './upload.controller'
-import {
-  // ... your existing controller imports (uploadData, etc)
-  getDocumentChatHistory,
-  chatWithDocument,
-  compareDocuments
-} from './document.controller'
+import { getDocumentChatHistory, chatWithDocument } from './document.controller'
+import { SuggestedFocusService } from './suggested-focus.service'
 
 // 🛠️ NEW: Import your Zod Schemas
 import {
@@ -39,8 +36,21 @@ router.use(protect)
 // ==========================================
 
 // Route: POST /api/documents/upload
-// Upgraded to handle batch uploads! Expects an array of files under the key 'files' (max 10)
-router.post('/upload', uploadMemory.array('files', 10), uploadData)
+// Upgraded to handle batch uploads! Expects an array of files under the key 'files' (max 5)
+router.post('/upload', checkTokenBudget, uploadMemory.array('files', 5), uploadData)
+
+// Route: GET /api/documents/suggested-focus
+// Returns the top-2 documents ranked by cognitiveLoad + recency + isUnread.
+// Must be declared BEFORE /:id so Express doesn't treat 'suggested-focus' as an ID.
+router.get('/suggested-focus', async (req, res, next) => {
+  try {
+    const userId = req.user!._id.toString()
+    const docs = await SuggestedFocusService.getTopFocusDocuments(userId)
+    res.status(200).json({ success: true, count: docs.length, data: docs })
+  } catch (error) {
+    next(error)
+  }
+})
 
 // Route: GET /api/documents
 router.get('/', getAllDocuments)
@@ -83,8 +93,5 @@ router.get('/:id/chat', getDocumentChatHistory)
 
 // Route: POST /api/documents/:id/chat
 router.post('/:id/chat', chatWithDocument)
-
-// 🤖 Route: POST /api/documents/compare
-router.post('/compare', compareDocuments)
 
 export default router

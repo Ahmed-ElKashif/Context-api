@@ -1,12 +1,29 @@
 import { ChatOpenAI } from '@langchain/openai'
+import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { StringOutputParser } from '@langchain/core/output_parsers'
 
+// ─── Module-level default (production) ──────────────────────────────────────
+const defaultSynthesizerModel = new ChatOpenAI({
+  model: 'gpt-4o-mini',
+  temperature: 0.2 // Low temperature for factual synthesis, not creative writing
+})
+
 export class SynthesizerAgent {
-  private static llm = new ChatOpenAI({
-    modelName: 'gpt-4o-mini',
-    temperature: 0.2 // Low temperature for factual synthesis, not creative writing
-  })
+  // ==========================================
+  // INJECTED MODEL (injectable for unit tests)
+  // ==========================================
+
+  private static _model: BaseChatModel = defaultSynthesizerModel
+
+  /**
+   * Injection point — called by ModelRegistry at startup.
+   * In unit tests, call this in beforeEach() to inject a mock model.
+   * @example SynthesizerAgent.init(mockModel)
+   */
+  static init(model: BaseChatModel): void {
+    this._model = model
+  }
 
   static async generateBulkSummary(documentsData: string): Promise<string> {
     const prompt = ChatPromptTemplate.fromMessages([
@@ -21,7 +38,7 @@ export class SynthesizerAgent {
       ['human', 'Here is the data for the selected files:\n{documentsData}']
     ])
 
-    const chain = prompt.pipe(this.llm).pipe(new StringOutputParser())
+    const chain = prompt.pipe(this._model).pipe(new StringOutputParser())
 
     const response = await chain.invoke({
       documentsData

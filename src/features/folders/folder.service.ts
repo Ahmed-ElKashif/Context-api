@@ -206,7 +206,7 @@ export class FolderService {
     await Folder.deleteMany({ user: userId, _id: { $in: folderIdsToDelete } })
 
     return {
-      foldersd: foldersToDelete.length,
+      foldersDeleted: foldersToDelete.length,
       documentsDeleted: documentsToDelete.length
     }
   }

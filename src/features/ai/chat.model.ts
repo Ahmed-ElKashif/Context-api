@@ -18,7 +18,7 @@ const chatMessageSchema = new Schema<IChatMessage>(
   { timestamps: true }
 )
 
-// Performance index: Instantly load the chat history for a specific document
-chatMessageSchema.index({ documentId: 1, createdAt: 1 })
+// Compound index: user + documentId first, then time-sorted — defense-in-depth + query perf
+chatMessageSchema.index({ documentId: 1, user: 1, createdAt: 1 })
 
 export const ChatMessageModel = mongoose.model<IChatMessage>('ChatMessage', chatMessageSchema)

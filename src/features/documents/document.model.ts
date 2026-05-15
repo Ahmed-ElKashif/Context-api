@@ -11,6 +11,11 @@ export interface IDocument extends Document {
   fileType: DocumentType
   aiStatus: AIStatus
   cognitiveLoad: CognitiveLoad
+
+  //  Detailed Cognitive Metrics
+  cognitiveScore?: number
+  cognitiveReason?: string
+
   summary?: string
   tags: string[]
   extractedText?: string
@@ -27,6 +32,7 @@ export interface IDocument extends Document {
   contentType: string
   isOrganized: boolean
   fileHash?: string
+  isUnread: boolean
 }
 
 // 2. MONGOOSE SCHEMA (Configuration Objects)
@@ -49,6 +55,16 @@ const documentSchema = new Schema<IDocument>(
       enum: ['Light', 'Medium', 'Heavy'],
       default: 'Light'
     },
+
+    //  Adding the detailed metrics to the DB schema
+    cognitiveScore: {
+      type: Number,
+      min: 1,
+      max: 10,
+      default: 1
+    },
+    cognitiveReason: { type: String },
+
     summary: { type: String },
     tags: { type: [String], default: [] },
     extractedText: { type: String },
@@ -66,7 +82,8 @@ const documentSchema = new Schema<IDocument>(
     // 🛠️ THE FIX: Add the new fields to the actual database schema!
     contentType: { type: String, default: 'Uncategorized' },
     isOrganized: { type: Boolean, default: false },
-    fileHash: { type: String }
+    fileHash: { type: String },
+    isUnread: { type: Boolean, default: true }
   },
   { timestamps: true }
 )

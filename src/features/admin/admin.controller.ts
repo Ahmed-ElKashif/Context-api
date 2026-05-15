@@ -48,7 +48,7 @@ export const adminController = {
    */
   async toggleSuspend(req: Request, res: Response, next: NextFunction) {
     try {
-      const { id } = req.params
+      const id = req.params.id as string
       const { suspend } = req.body
 
       if (typeof suspend !== 'boolean') {

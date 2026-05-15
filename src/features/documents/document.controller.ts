@@ -2,7 +2,6 @@ import { Request, Response, NextFunction } from 'express'
 import { AppError } from '../../core/errors/AppError'
 import { DocumentService } from './document.service'
 import { DocumentModel } from './document.model'
-import { DeepThinkerService } from '../ai/deep-thinker.service'
 
 // @route   GET /api/documents
 export const getAllDocuments = async (
@@ -314,35 +313,3 @@ export const chatWithDocument = async (req: Request, res: Response): Promise<voi
   }
 }
 
-/**
- * Compares two documents using Llama 3.1 on Groq.
- * @route POST /api/documents/compare
- */
-export const compareDocuments = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const userId = (req as any).user._id.toString()
-    const { docIdA, docIdB } = req.body
-
-    if (!docIdA || !docIdB) {
-      res.status(400).json({
-        success: false,
-        message: 'Both docIdA and docIdB are required in the request body.'
-      })
-      return
-    }
-
-    // Call the DeepThinker service
-    const comparisonResults = await DeepThinkerService.compareDocuments(userId, docIdA, docIdB)
-
-    res.status(200).json({
-      success: true,
-      data: comparisonResults
-    })
-  } catch (error) {
-    next(error)
-  }
-}

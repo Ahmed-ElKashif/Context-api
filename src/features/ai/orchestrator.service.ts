@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { tool } from '@langchain/core/tools'
-import { initChatModel } from 'langchain/chat_models/universal'
+import { ChatOpenAI } from '@langchain/openai'
+import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { createReactAgent } from '@langchain/langgraph/prebuilt'
 import { HumanMessage, SystemMessage, isAIMessage } from '@langchain/core/messages'
 import { MemorySaver } from '@langchain/langgraph'
@@ -15,7 +16,31 @@ export interface DocumentMetadata {
   cognitiveLoad: 'Light' | 'Medium' | 'Heavy'
 }
 
-export class OrchestratorAgent {
+// ─── Module-level default (production) ──────────────────────────────────────
+// Instantiated ONCE per process — not inside a method.
+// ModelRegistry.initialize() will call OrchestratorService.init() to override this.
+const defaultOrchestratorModel = new ChatOpenAI({
+  model: 'gpt-4o-mini',
+  temperature: 0.2,
+  maxTokens: 1000
+})
+
+export class OrchestratorService {
+  // ==========================================
+  // INJECTED MODEL (injectable for unit tests)
+  // ==========================================
+
+  private static _model: BaseChatModel = defaultOrchestratorModel
+
+  /**
+   * Injection point — called by ModelRegistry at startup.
+   * In unit tests, call this in beforeEach() to inject a mock model.
+   * @example OrchestratorService.init(mockModel)
+   */
+  static init(model: BaseChatModel): void {
+    this._model = model
+  }
+
   // ==========================================
   // STATE MANAGEMENT
   // ==========================================
@@ -79,22 +104,20 @@ export class OrchestratorAgent {
   // ==========================================
 
   /**
-   * Invokes the GPT-4o-mini Orchestrator to analyze document text and extract structured metadata.
-   * Requires documentId to assign a unique thread to the LangGraph MemorySaver.
+   * Invokes the Orchestrator to analyze document text and extract structured metadata.
+   * The LLM model is injected — never constructed here (SRP).
+   * createReactAgent() stays inside this method intentionally: the LangGraph graph
+   * is stateful per thread_id, so a fresh graph is correct per invocation.
+   * Only the MODEL is shared and injected.
    */
   public static async analyzeDocumentMetadata(
     documentId: string,
     textPreview: string,
-    persona: string = 'general' // 🛠️ NEW: Added persona parameter
+    persona: string = 'general'
   ): Promise<DocumentMetadata> {
-    const model = await initChatModel('gpt-4o-mini', {
-      temperature: 0.2,
-      maxTokens: 1000
-    })
-
     const tools = [this.classifyDocument, this.labelCognitiveLoad, this.generateTags]
 
-    // 🧠 🛠️ NEW: Dynamic Persona Dictionary
+    // Dynamic Persona Dictionary
     const personaPrompts: Record<string, string> = {
       general: 'Write a clear, easy-to-understand summary that anyone can digest.',
       professional:
@@ -105,10 +128,8 @@ export class OrchestratorAgent {
         'Write a highly technical summary focusing on architecture, code patterns, algorithms, system design, and technical specifications.'
     }
 
-    // Grab the specific instruction, fallback to general if an unknown string is passed
     const stylingRule = personaPrompts[persona.toLowerCase()] || personaPrompts['general']
 
-    // 🛠️ NEW: Updated System Prompt
     const systemPrompt = new SystemMessage(`
       You are an elite Document Orchestrator Agent. 
       Your sole responsibility is to analyze the provided document text and extract metadata.
@@ -127,16 +148,16 @@ export class OrchestratorAgent {
       Do not skip any tools. Do not ask follow-up questions.
     `)
 
-    // Bind the tools and the checkpointer to the LangGraph ReAct agent
+    // createReactAgent uses the injected this._model — not a locally constructed one
     const agent = createReactAgent({
-      llm: model,
+      llm: this._model,
       tools: tools,
       checkpointSaver: this.checkpointer
     })
 
     let response
 
-    // 1. Strict Try/Catch on Agent Execution
+    // Strict Try/Catch on Agent Execution
     try {
       response = await agent.invoke(
         {
@@ -145,14 +166,13 @@ export class OrchestratorAgent {
             new HumanMessage(`Analyze the following document text:\n\n${textPreview}`)
           ]
         },
-        { configurable: { thread_id: documentId } } // Checkpointer configuration
+        { configurable: { thread_id: documentId } }
       )
 
-      // 2. Log Token Usage
+      // Log Token Usage
       const aiMessages = response.messages.filter(isAIMessage)
       const lastAiMsg = aiMessages[aiMessages.length - 1]
 
-      // LangChain attaches usage metrics to the AIMessage object
       const tokens = lastAiMsg?.usage_metadata
       if (tokens) {
         console.log(
@@ -162,7 +182,7 @@ export class OrchestratorAgent {
         console.log(`[Orchestrator Token Usage] Metrics unavailable for this payload.`)
       }
     } catch (error) {
-      console.error('[OrchestratorAgent] Critical failure during agent invocation:', error)
+      console.error('[OrchestratorService] Critical failure during agent invocation:', error)
       throw new Error('Orchestrator execution failed.')
     }
 
@@ -170,7 +190,6 @@ export class OrchestratorAgent {
     // DATA EXTRACTION
     // ==========================================
 
-    // We iterate through the AI's tool calls in the message history to extract the Zod-validated data
     const metadata: Partial<DocumentMetadata> = {
       tags: []
     }
@@ -193,7 +212,6 @@ export class OrchestratorAgent {
       }
     }
 
-    // Fallback safeguards to guarantee structural integrity
     return {
       type: metadata.type || 'TextSnippet',
       summary: metadata.summary || 'Summary could not be generated.',

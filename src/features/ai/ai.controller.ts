@@ -1,18 +1,29 @@
 import { Request, Response, NextFunction } from 'express'
 import { AppError } from '../../core/errors/AppError'
 import { AIService } from './ai.service'
+import { estimateTokens } from '../../core/services/token-budget.service'
 
 /**
- * @description Serves as the central router for all AI-driven operations.
- * Strictly adheres to Controller-Service separation: handles only HTTP
- * parsing and response formatting, delegating all LangChain/LangGraph
- * agent logic to the AIService.
+ * @description AI Controller — HTTP parsing and response formatting only.
+ * Each handler sets res.locals.aiMeta after its service call so that:
+ *   - checkTokenBudget middleware can record token usage
+ *   - aiLogger middleware can emit a structured log line
+ *
+ * res.locals.aiMeta shape: { model: string, tokensUsed: number, operation: string }
  */
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function getLatency(res: Response): number {
+  return Date.now() - (res.locals.startTime ?? Date.now())
+}
+
+// ─── Controllers ─────────────────────────────────────────────────────────────
 
 /**
  * Analyzes a batch of unstructured documents and generates a proposed
  * relational folder structure based on semantic context (GPT-4o-mini).
- * @route POST /api/ai/folders/propose
+ * @route POST /api/ai/organize-folder
  */
 export const generateSemanticStructure = async (
   req: Request,
@@ -23,8 +34,15 @@ export const generateSemanticStructure = async (
     const userId = (req as any).user._id
     const { documents } = req.body
 
-    // 🧠 Hand off to the Orchestrator Service
     const proposedUpdates = await AIService.generateSemanticProposal(userId, documents)
+
+    // Estimate tokens: document titles + summaries + system prompt overhead
+    const inputText = JSON.stringify(documents)
+    res.locals.aiMeta = {
+      model: 'gpt-4o-mini',
+      tokensUsed: estimateTokens(inputText) + 800, // +800 system prompt overhead
+      operation: 'organize-folder'
+    }
 
     res.status(200).json({
       success: true,
@@ -43,7 +61,7 @@ export const generateSemanticStructure = async (
 /**
  * Executes the AI's proposed structure, recursively building physical
  * MongoDB folders and moving the documents into them.
- * @route POST /api/ai/folders/apply
+ * @route PUT /api/ai/apply-folders
  */
 export const applySemanticFolders = async (
   req: Request,
@@ -54,9 +72,9 @@ export const applySemanticFolders = async (
     const userId = (req as any).user._id
     const { updates } = req.body
 
-    // 🧠 Hand off to the DB Service (Fire and wait)
     await AIService.applyPhysicalFolders(userId, updates)
 
+    // No AI call — no aiMeta needed
     res.status(200).json({
       success: true,
       message: 'Physical folder structure generated and documents routed successfully!'
@@ -87,10 +105,14 @@ export const searchDocuments = async (
       return
     }
 
-    // 🧠 Hand off to the AI Service (the God Function we just perfected!)
-    // Note: Make sure your import matches wherever you put semanticSearch
-    // (e.g., AIService or EmbeddingService)
     const results = await AIService.semanticSearch(userId, query)
+
+    // Semantic search uses embeddings — estimate query tokens
+    res.locals.aiMeta = {
+      model: 'text-embedding-3-small',
+      tokensUsed: estimateTokens(query),
+      operation: 'semantic-search'
+    }
 
     res.status(200).json({
       success: true,
@@ -98,8 +120,6 @@ export const searchDocuments = async (
       data: results
     })
   } catch (error) {
-    // I noticed you used `next(error)` in your snippet, which is the perfect
-    // way to hand errors to a global Express error-handling middleware!
     next(error)
   }
 }
@@ -122,6 +142,15 @@ export const synthesizeDocuments = async (
     }
 
     const bulkSummary = await AIService.synthesizeDocuments(documentIds, userId)
+
+    // Synthesizer uses existing document summaries + tags — relatively light
+    // Estimate: average summary ~200 chars × documentCount + system prompt
+    const estimatedInputChars = documentIds.length * 800 // summary + tags per doc
+    res.locals.aiMeta = {
+      model: 'gpt-4o-mini',
+      tokensUsed: estimateTokens(String(estimatedInputChars)) + 600,
+      operation: 'synthesize'
+    }
 
     res.status(200).json({
       success: true,

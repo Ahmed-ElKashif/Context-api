@@ -1,7 +1,8 @@
 import dotenv from 'dotenv'
 import mongoose from 'mongoose'
-import { OrchestratorAgent } from '../features/ai/orchestrator.agent'
+import { OrchestratorService } from '../features/ai/orchestrator.service'
 import { EmbeddingService } from '../features/ai/vector.service'
+import { ModelRegistry } from '../config/models.registry'
 
 // 1. Strict pattern for environment variable access
 const env = dotenv.config().parsed
@@ -22,6 +23,9 @@ async function runEndToEndTest() {
     await mongoose.connect(env!.MONGO_URI!)
     console.log('Success: Connected to Atlas.\n')
 
+    // Initialize AI models (required before any service call)
+    ModelRegistry.initialize()
+
     // STEP 2: Mock Upload & Parse
     console.log('Step 2: Simulating Document Parse...')
     const dummyDocId = new mongoose.Types.ObjectId().toString()
@@ -36,15 +40,15 @@ async function runEndToEndTest() {
     `
     console.log(`Success: Raw text extracted (${rawText.length} characters).\n`)
 
-    // STEP 3: OrchestratorAgent Classify
-    console.log('Step 3: Invoking OrchestratorAgent for Metadata Classification...')
+    // STEP 3: OrchestratorService Classify
+    console.log('Step 3: Invoking OrchestratorService for Metadata Classification...')
     let metadata
     try {
-      metadata = await OrchestratorAgent.analyzeDocumentMetadata(dummyDocId, rawText)
+      metadata = await OrchestratorService.analyzeDocumentMetadata(dummyDocId, rawText)
       console.log('Success: Orchestrator executed cleanly.')
       console.log('Extracted Output:', metadata, '\n')
     } catch (error) {
-      console.error('Failure: OrchestratorAgent threw an error.', error)
+      console.error('Failure: OrchestratorService threw an error.', error)
       throw error
     }
 
