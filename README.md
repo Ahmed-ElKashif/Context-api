@@ -40,6 +40,11 @@
 [![Postman](https://img.shields.io/badge/🧪_Postman_Collection-Import_Ready-FF6C37?style=flat-square)](./docs/postman/Context%20API.postman_collection.json)
 [![AI Postman](https://img.shields.io/badge/🤖_AI_Endpoints_Collection-Import_Ready-7C3AED?style=flat-square)](./docs/postman/ai-postman-collection.json)
 
+<br/>
+
+[![Context Web Frontend](https://img.shields.io/badge/🔗_Paired_With-Context_Web-61DAFB?style=flat-square)](https://github.com/youssef1232004/context-mvp-front)
+[![Context Mobile App](https://img.shields.io/badge/🔗_Paired_With-Context_Mobile-000020?style=flat-square)](https://github.com/youssef1232004/context-mobile)
+
 </div>
 
 ---
