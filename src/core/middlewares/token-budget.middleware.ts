@@ -45,9 +45,19 @@ export const checkTokenBudget = async (
 
   const budget = await TokenBudgetService.checkBudget(userId)
 
-  if (!budget.allowed) {
+    if (!budget.allowed) {
     const resetAt = getResetTime()
     const retryAfterSeconds = Math.ceil((resetAt.getTime() - Date.now()) / 1000)
+    
+    const hoursRemaining = Math.floor(retryAfterSeconds / 3600)
+    const minutesRemaining = Math.floor((retryAfterSeconds % 3600) / 60)
+    let timeText = ''
+    if (hoursRemaining > 0) {
+      timeText += `${hoursRemaining} hour${hoursRemaining > 1 ? 's' : ''}`
+    }
+    if (minutesRemaining > 0) {
+      timeText += `${timeText ? ' and ' : ''}${minutesRemaining} minute${minutesRemaining > 1 ? 's' : ''}`
+    }
 
     res.set({
       'Retry-After': String(retryAfterSeconds),
@@ -59,7 +69,7 @@ export const checkTokenBudget = async (
     res.status(429).json({
       success: false,
       error: 'Daily AI token budget exceeded.',
-      message: `You have used all ${DAILY_TOKEN_BUDGET.toLocaleString()} tokens for today. Your budget resets at midnight UTC.`,
+      message: `You have used all ${DAILY_TOKEN_BUDGET.toLocaleString()} tokens for today. Your budget will be refreshed in ${timeText}.`,
       tokensUsed: budget.tokensUsed,
       limit: budget.limit,
       resetAt: resetAt.toISOString(),

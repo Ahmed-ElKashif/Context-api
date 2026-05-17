@@ -23,7 +23,8 @@ import {
   bulkUpdateSemanticPaths,
   bulkDeleteDocuments,
   getDocumentById,
-  serveDocumentFile
+  serveDocumentFile,
+  getDocumentStatuses
 } from './document.controller'
 
 const router = Router()
@@ -58,6 +59,10 @@ router.get('/', getAllDocuments)
 // 🔍 Route: GET /api/documents/search
 // Validates query parameters (q, page, limit)
 router.get('/search', validate(searchDocumentSchema), searchDocuments)
+
+// 📡 Route: GET /api/documents/status
+// Lightweight endpoint for polling document aiStatus
+router.get('/status', getDocumentStatuses)
 
 // 📁 Route: PUT /api/documents/bulk/semantic-paths
 // Validates the array of updates before hitting the DB

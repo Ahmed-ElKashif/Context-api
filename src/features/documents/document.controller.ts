@@ -262,6 +262,32 @@ export const serveDocumentFile = async (
   }
 }
 
+// @route   GET /api/documents/status
+// Lightweight endpoint to poll document aiStatus
+export const getDocumentStatuses = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id?.toString()
+    if (!userId) return next(new AppError('Unauthorized', 401))
+
+    const idsParam = req.query.ids as string
+    if (!idsParam) {
+      res.status(200).json({ success: true, data: [] })
+      return
+    }
+
+    const ids = idsParam.split(',')
+    const documents = await DocumentModel.find({ _id: { $in: ids }, user: userId }).select('_id title aiStatus tags cognitiveLoad')
+
+    res.status(200).json({ success: true, data: documents })
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const getDocumentChatHistory = async (req: Request, res: Response): Promise<void> => {
   try {
     const id = req.params.id as string

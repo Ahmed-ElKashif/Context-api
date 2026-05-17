@@ -3,6 +3,7 @@ import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { SystemMessage, HumanMessage } from '@langchain/core/messages'
 import { z } from 'zod'
 import { DocumentModel } from '../documents/document.model'
+import { AppError } from '../../core/errors/AppError'
 
 // ─── Output Schemas (Zod) ────────────────────────────────────────────────────
 
@@ -106,6 +107,17 @@ export class FolderProposerService {
     documentCount: number
     wasCapped: boolean
   }> {
+    // ── 0. Ensure no unanalyzed documents exist in the pool ───────────────
+    const unanalyzedDocs = await DocumentModel.exists({
+      user: userId,
+      isOrganized: false,
+      aiStatus: { $ne: 'Analyzed' }
+    })
+
+    if (unanalyzedDocs) {
+      throw new AppError('Please wait until the Neural Cortex finishes analyzing all your unorganized documents before generating a global folder proposal.', 400)
+    }
+
     // ── 1. Fetch all analyzed documents for this user ─────────────────────
     const allDocs = await DocumentModel.find({
       user: userId,
