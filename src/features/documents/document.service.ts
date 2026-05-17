@@ -7,6 +7,7 @@ import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages
 import { ChatMessageModel } from '../ai/chat.model'
 import { EmbeddingService } from '../ai/vector.service'
 import mongoose from 'mongoose'
+import { AppError } from '../../core/errors/AppError'
 
 const cloudinary = configureCloudinary()
 
@@ -128,10 +129,22 @@ export class DocumentService {
 
   // 4. Bulk Update Semantic Paths
   static async bulkUpdatePaths(userId: string, updates: { documentId: string; newPath: string }[]) {
+    // 🛠️ Check if any of these documents are already organized
+    const documentIds = updates.map(u => u.documentId)
+    const alreadyOrganizedDocs = await DocumentModel.find({
+      _id: { $in: documentIds },
+      user: userId,
+      isOrganized: true
+    })
+
+    if (alreadyOrganizedDocs.length > 0) {
+      throw new AppError('One or more selected documents are already organized.', 400)
+    }
+
     const bulkOps = updates.map((update) => ({
       updateOne: {
         filter: { _id: update.documentId, user: userId },
-        update: { $set: { semanticPath: update.newPath } }
+        update: { $set: { semanticPath: update.newPath, isOrganized: true } }
       }
     }))
 

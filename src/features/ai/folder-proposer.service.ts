@@ -109,7 +109,8 @@ export class FolderProposerService {
     // ── 1. Fetch all analyzed documents for this user ─────────────────────
     const allDocs = await DocumentModel.find({
       user: userId,
-      aiStatus: 'Analyzed'
+      aiStatus: 'Analyzed',
+      isOrganized: false
     })
       .select('_id title summary tags fileType cognitiveLoad')
       .sort({ updatedAt: -1 })
