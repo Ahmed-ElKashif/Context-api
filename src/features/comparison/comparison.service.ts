@@ -13,6 +13,13 @@ export class ComparisonService {
       return { error: 'One or both documents not found or unauthorized.', statusCode: 404 }
     }
 
+    if (doc1.aiStatus !== 'Analyzed' || doc2.aiStatus !== 'Analyzed') {
+      return {
+        error: 'Please wait until the Neural Cortex finishes analyzing both documents before comparing.',
+        statusCode: 400
+      }
+    }
+
     // 2. Ensure we have text to compare
     const text1 = doc1.extractedText || doc1.summary
     const text2 = doc2.extractedText || doc2.summary

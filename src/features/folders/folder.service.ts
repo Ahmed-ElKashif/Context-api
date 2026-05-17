@@ -2,6 +2,7 @@ import mongoose from 'mongoose'
 import Folder, { IFolder } from './folder.model'
 import { DocumentModel, IDocument } from '../documents/document.model'
 import { configureCloudinary } from '../../config/cloudinary'
+import { EmbeddingService } from '../ai/vector.service'
 
 const cloudinary = configureCloudinary()
 
@@ -201,6 +202,11 @@ export class FolderService {
           })
         )
     )
+
+    const docIdsToDelete = documentsToDelete.map((doc) => doc._id.toString())
+    if (docIdsToDelete.length > 0) {
+      await EmbeddingService.deleteDocumentChunks(docIdsToDelete, userId)
+    }
 
     await DocumentModel.deleteMany({ user: userId, folder: { $in: folderIdsToDelete } })
     await Folder.deleteMany({ user: userId, _id: { $in: folderIdsToDelete } })

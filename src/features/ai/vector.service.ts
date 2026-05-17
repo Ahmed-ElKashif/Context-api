@@ -94,4 +94,19 @@ export class EmbeddingService {
       embeddingKey: 'embedding'
     })
   }
+
+  /**
+   * Deletes all semantic chunks associated with a specific document ID or array of document IDs.
+   * Ensures no ghost chunks remain in Vector Search when documents or folders are deleted.
+   */
+  public static async deleteDocumentChunks(documentIds: string | string[], userId: string): Promise<void> {
+    const ids = Array.isArray(documentIds) ? documentIds : [documentIds]
+    const objectIds = ids.map(id => new mongoose.Types.ObjectId(id))
+
+    const result = await ChunkModel.deleteMany({
+      documentId: { $in: objectIds },
+      userId: new mongoose.Types.ObjectId(userId)
+    })
+    console.log(`[VectorStore] Purged ${result.deletedCount} ghost chunks for deleted documents.`)
+  }
 }

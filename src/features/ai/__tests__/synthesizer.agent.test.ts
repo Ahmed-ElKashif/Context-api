@@ -25,7 +25,7 @@ jest.mock('@langchain/core/prompts', () => ({
 }))
 
 // ─── Import AFTER mock declaration ───────────────────────────────────────────
-import { SynthesizerAgent } from '../synthesizer.agent'
+import { SynthesizerAgent } from '../synthesizer.service'
 
 const mockModel = { invoke: jest.fn(), pipe: jest.fn() }
 
@@ -38,7 +38,9 @@ beforeEach(() => {
 describe('SynthesizerAgent', () => {
   describe('generateBulkSummary()', () => {
     it('returns trimmed model output for related documents', async () => {
-      mockChainInvoke.mockResolvedValueOnce('  These documents share machine learning fundamentals.  ')
+      mockChainInvoke.mockResolvedValueOnce(
+        '  These documents share machine learning fundamentals.  '
+      )
       const result = await SynthesizerAgent.generateBulkSummary('doc data payload')
       expect(result).toBe('These documents share machine learning fundamentals.')
     })

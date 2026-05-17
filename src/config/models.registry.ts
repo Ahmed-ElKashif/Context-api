@@ -1,7 +1,7 @@
 import { ChatOpenAI, OpenAIEmbeddings } from '@langchain/openai'
 import { ChatGroq } from '@langchain/groq'
 import { OrchestratorService } from '../features/ai/orchestrator.service'
-import { SynthesizerAgent } from '../features/ai/synthesizer.agent'
+import { SynthesizerAgent } from '../features/ai/synthesizer.service'
 import { CognitiveLoadService } from '../features/ai/cognitive-load.service'
 import { VisualCortexService } from '../features/ai/visual-cortex.service'
 import { DeepThinkerService } from '../features/comparison/deep-thinker.service'

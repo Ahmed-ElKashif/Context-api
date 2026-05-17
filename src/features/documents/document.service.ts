@@ -169,6 +169,9 @@ export class DocumentService {
 
     await document.deleteOne()
 
+    // 🗑️ Purge all semantic chunks from Vector Store
+    await EmbeddingService.deleteDocumentChunks(docId, userId)
+
     // 🛠️ THE FIX 3: Update the parent folder's timestamp when a document is deleted!
     if (folderId) {
       await Folder.findByIdAndUpdate(folderId, { updatedAt: new Date() })
@@ -199,6 +202,9 @@ export class DocumentService {
     ]
 
     const result = await DocumentModel.deleteMany(query)
+
+    // 🗑️ Purge all semantic chunks from Vector Store
+    await EmbeddingService.deleteDocumentChunks(ids, userId)
 
     // 🛠️ THE FIX 4: Update timestamps for all affected folders at once!
     if (folderIdsToUpdate.length > 0) {

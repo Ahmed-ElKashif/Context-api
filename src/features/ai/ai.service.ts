@@ -5,14 +5,17 @@ import { EmbeddingService } from './vector.service'
 import { OrchestratorService } from './orchestrator.service'
 import { PDFParse } from 'pdf-parse'
 import mammoth from 'mammoth'
-import { SynthesizerAgent } from './synthesizer.agent'
+import { SynthesizerAgent } from './synthesizer.service'
 import { VisualCortexService } from './visual-cortex.service'
 import { z } from 'zod'
 import { ChatOpenAI } from '@langchain/openai'
 import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { SystemMessage, HumanMessage } from '@langchain/core/messages'
 import { CognitiveLoadService } from './cognitive-load.service'
-import { TokenBudgetService, estimateDocumentPipelineTokens } from '../../core/services/token-budget.service'
+import {
+  TokenBudgetService,
+  estimateDocumentPipelineTokens
+} from '../../core/services/token-budget.service'
 import { AppError } from '../../core/errors/AppError'
 
 // ─── Module-level default (production) ──────────────────────────────────────
@@ -70,20 +73,30 @@ export class AIService {
       throw new Error('No valid documents found for synthesis.')
     }
 
+    // 🛠️ Check if any document is still processing
+    const unanalyzedDocs = documents.filter((doc) => doc.aiStatus !== 'Analyzed')
+    if (unanalyzedDocs.length > 0) {
+      throw new AppError(
+        'Please wait until the Neural Cortex finishes analyzing all selected documents before synthesizing.',
+        400
+      )
+    }
+
     // If only one document is selected, just return its existing summary
     if (documents.length === 1) {
       return documents[0].summary || 'No summary available for this document.'
     }
 
-    // 2. Format the lightweight data for the LangChain Agent
+    // 2. Format the lightweight metadata for the LangChain Agent (Zero raw text, highly token efficient!)
     const formattedData = documents
       .map(
         (doc, index) => `
       Document ${index + 1}:
       Title: ${doc.title || 'Unknown'}
-      Type: ${doc.fileType}
+      Category/Type: ${doc.contentType || doc.fileType}
+      Cognitive Load: ${doc.cognitiveLoad || 'Medium'} (${doc.cognitiveScore || 5}/10)
       Tags: ${doc.tags?.join(', ')}
-      Summary: ${doc.summary}
+      Orchestrator Summary: ${doc.summary || 'No summary available.'}
       ---
     `
       )
@@ -190,10 +203,9 @@ export class AIService {
 
         // 5. Record token usage for the budget system (fire-and-forget, non-blocking)
         const estimatedTokens = estimateDocumentPipelineTokens(rawText)
-        TokenBudgetService.recordUsage(
-          (doc.user as any)._id.toString(),
-          estimatedTokens
-        ).catch((err) => console.error('[TokenBudget] Failed to record upload usage:', err))
+        TokenBudgetService.recordUsage((doc.user as any)._id.toString(), estimatedTokens).catch(
+          (err) => console.error('[TokenBudget] Failed to record upload usage:', err)
+        )
       } catch (error) {
         console.error(`[AI Worker] Failed to process document ${id}:`, error)
         await DocumentModel.findByIdAndUpdate(id, { aiStatus: 'Failed' })
@@ -222,13 +234,22 @@ export class AIService {
     // 2. Extract IDs and fetch the rich semantic metadata from the DB!
     const docIds = documents.map((d) => d._id || d.id).filter(Boolean) as string[]
     const dbDocs = await DocumentModel.find({ _id: { $in: docIds }, user: userId }).select(
-      '_id title summary tags fileType contentType isOrganized'
+      '_id title summary tags fileType contentType isOrganized aiStatus'
     )
 
     if (dbDocs.length === 0) return []
 
+    // 🛠️ Ensure all documents are fully analyzed before organizing
+    const unanalyzedDocs = dbDocs.filter((doc) => doc.aiStatus !== 'Analyzed')
+    if (unanalyzedDocs.length > 0) {
+      throw new AppError(
+        'Please wait until the Neural Cortex finishes analyzing all selected documents before organizing.',
+        400
+      )
+    }
+
     // 🛠️ Check if any of these documents are already organized to save tokens
-    const alreadyOrganizedDocs = dbDocs.filter(doc => doc.isOrganized)
+    const alreadyOrganizedDocs = dbDocs.filter((doc) => doc.isOrganized)
     if (alreadyOrganizedDocs.length > 0) {
       throw new AppError('One or more selected documents are already organized.', 400)
     }
@@ -296,6 +317,11 @@ export class AIService {
     updates: { documentId: string; newPath: string }[]
   ) {
     if (!updates || updates.length === 0) return
+
+    // Pre-fetch old folder IDs before moving documents to prune ghost folders afterwards
+    const documentIds = updates.map((u) => u.documentId).filter(Boolean)
+    const docsToMove = await DocumentModel.find({ _id: { $in: documentIds }, user: userId }).select('folder')
+    const oldFolderIds = [...new Set(docsToMove.map(d => d.folder?.toString()).filter(Boolean))]
 
     // 1. Pre-fetch existing folders into memory (O(1) lookups!)
     const existingFolders = await Folder.find({ user: userId }).select('_id path')
@@ -365,6 +391,31 @@ export class AIService {
       console.log(
         `[Folder Organizer] Successfully applied ${documentOperations.length} folder updates via BulkWrite.`
       )
+    }
+
+    // 5. Clean up / prune any old folders that are now completely empty ghost folders
+    if (oldFolderIds.length > 0) {
+      for (const oldFolderId of oldFolderIds) {
+        let currentId = oldFolderId
+        while (currentId) {
+          const docCount = await DocumentModel.countDocuments({ folder: currentId })
+          const childCount = await Folder.countDocuments({ parentFolder: currentId })
+
+          if (docCount === 0 && childCount === 0) {
+            const folderToDelete = await Folder.findById(currentId)
+            if (folderToDelete) {
+              const parentId = folderToDelete.parentFolder?.toString()
+              await Folder.findByIdAndDelete(currentId)
+              console.log(`[Folder Organizer] Pruned empty ghost folder: ${folderToDelete.name}`)
+              currentId = parentId
+            } else {
+              break
+            }
+          } else {
+            break
+          }
+        }
+      }
     }
   }
 
