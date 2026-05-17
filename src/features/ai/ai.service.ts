@@ -13,6 +13,7 @@ import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { SystemMessage, HumanMessage } from '@langchain/core/messages'
 import { CognitiveLoadService } from './cognitive-load.service'
 import { TokenBudgetService, estimateDocumentPipelineTokens } from '../../core/services/token-budget.service'
+import { AppError } from '../../core/errors/AppError'
 
 // ─── Module-level default (production) ──────────────────────────────────────
 // The AI folder organizer model — instantiated once, never inside a method.
@@ -221,10 +222,16 @@ export class AIService {
     // 2. Extract IDs and fetch the rich semantic metadata from the DB!
     const docIds = documents.map((d) => d._id || d.id).filter(Boolean) as string[]
     const dbDocs = await DocumentModel.find({ _id: { $in: docIds }, user: userId }).select(
-      '_id title summary tags fileType contentType'
+      '_id title summary tags fileType contentType isOrganized'
     )
 
     if (dbDocs.length === 0) return []
+
+    // 🛠️ Check if any of these documents are already organized to save tokens
+    const alreadyOrganizedDocs = dbDocs.filter(doc => doc.isOrganized)
+    if (alreadyOrganizedDocs.length > 0) {
+      throw new AppError('One or more selected documents are already organized.', 400)
+    }
 
     // 3. Force the AI to return a strict JSON array using Zod
     const ProposalSchema = z.object({
