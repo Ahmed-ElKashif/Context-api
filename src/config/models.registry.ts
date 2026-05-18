@@ -114,7 +114,7 @@ export class ModelRegistry {
     DocumentService.init(
       new ChatOpenAI({
         model: 'gpt-4o-mini',
-        temperature: 0.2 // Slightly higher temp for conversational RAG responses
+        temperature: 0.5 // Slightly higher temp for conversational RAG responses
       })
     )
 
