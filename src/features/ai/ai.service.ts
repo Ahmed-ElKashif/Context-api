@@ -13,6 +13,7 @@ import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { SystemMessage, HumanMessage } from '@langchain/core/messages'
 import { CognitiveLoadService } from './cognitive-load.service'
 import { TokenBudgetService, estimateDocumentPipelineTokens } from '../../core/services/token-budget.service'
+import { AppError } from '../../core/errors/AppError'
 
 // ─── Module-level default (production) ──────────────────────────────────────
 // The AI folder organizer model — instantiated once, never inside a method.
@@ -273,10 +274,22 @@ export class AIService {
     console.log(`[AI Organizer] Proposing folders for ${dbDocs.length} documents...`)
 
     // 7. Invoke the model
-    const response = await llm.invoke([systemPrompt, humanPrompt])
+    try {
+      const response = await llm.invoke([systemPrompt, humanPrompt])
 
-    // Returns perfectly structured: [{ documentId: "...", newPath: "..." }]
-    return response.updates
+      // Returns perfectly structured: [{ documentId: "...", newPath: "..." }]
+      return response.updates
+    } catch (error: any) {
+      if (
+        error?.status === 429 ||
+        error?.message?.includes('429') ||
+        error?.message?.includes('rate limit') ||
+        error?.message?.includes('Too Many Requests')
+      ) {
+        throw new AppError('AI provider rate limit exceeded. Please try again later.', 429)
+      }
+      throw error
+    }
   }
 
   // ==========================================

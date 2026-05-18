@@ -313,3 +313,40 @@ export const chatWithDocument = async (req: Request, res: Response): Promise<voi
   }
 }
 
+// @route   POST /api/documents/:id/reanalyze
+export const reanalyzeDocument = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const id = req.params.id as string
+    const userId = (req as any).user._id.toString()
+
+    // Ensure document exists and belongs to user
+    const document = await DocumentModel.findOne({ _id: id, user: userId })
+    if (!document) {
+      res.status(404).json({ success: false, message: 'Document not found' })
+      return
+    }
+
+    // Set to pending so the UI updates
+    document.aiStatus = 'Pending'
+    await document.save()
+
+    // Import AIService dynamically to avoid circular dependencies if any,
+    // or just require it (we will assume it can be required)
+    const { AIService } = require('../ai/ai.service')
+    
+    // Kick off background job
+    AIService.processPendingDocuments([id]).catch((err: any) => {
+      console.error(`[Reanalyze API] Failed to trigger background worker for ${id}:`, err)
+    })
+
+    res.status(200).json({
+      success: true,
+      message: 'Document re-analysis triggered successfully',
+      data: document
+    })
+  } catch (error: any) {
+    console.error('[Document Controller] Error reanalyzing document:', error)
+    next(error)
+  }
+}
+
