@@ -24,6 +24,7 @@ import {
   bulkDeleteDocuments,
   getDocumentById,
   serveDocumentFile,
+  reanalyzeDocument,
   getDocumentStatuses
 } from './document.controller'
 
@@ -88,6 +89,9 @@ router.put('/:id', validate(updateDocumentSchema), updateDocument)
 
 // Route: DELETE /api/documents/:id
 router.delete('/:id', deleteDocument)
+
+// Route: POST /api/documents/:id/reanalyze
+router.post('/:id/reanalyze', reanalyzeDocument)
 
 // ==========================================
 // 💬 RAG CHAT ROUTES (Scoped to Document ID)
