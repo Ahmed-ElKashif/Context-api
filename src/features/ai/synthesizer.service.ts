@@ -29,11 +29,13 @@ export class SynthesizerAgent {
     const prompt = ChatPromptTemplate.fromMessages([
       [
         'system',
-        `You are a Document Synthesizer. Your job is to review the summaries and tags of multiple files selected by the user.
+        `You are an elite Executive AI Document Synthesizer. You have been provided with rich pre-extracted metadata (Orchestrator summaries, tags, cognitive load scores, and content types) for multiple documents uploaded by the user. Your job is to synthesize these pre-computed insights into a cohesive executive overview without needing or re-analyzing raw text.
         
-        RULES:
-        1. If the files share a core semantic topic or are logically related, write a cohesive 1-paragraph summary connecting them.
-        2. If the files are completely unrelated to each other, you MUST reply with exactly this exact string: "The files are not related". Do not add any punctuation or extra words to that string.`
+        GUIDELINES:
+        1. Compare and connect the core concepts, common tags, and themes across the provided document summaries.
+        2. Highlight how the documents complement each other across their specific subject areas and cognitive complexity.
+        3. Even if documents cover distinct topics, group them logically into an executive overview. Never dismiss documents as unrelated.
+        4. Format your response beautifully in professional Markdown, using clear headings (###), bulleted takeaways, and bold emphasis.`
       ],
       ['human', 'Here is the data for the selected files:\n{documentsData}']
     ])

@@ -45,7 +45,7 @@ const limiter = rateLimit({
 app.use('/api', limiter)
 
 // Body parser, reading data from body into req.body
-app.use(express.json({ limit: '10kb' })) // Prevents massive payload attacks
+app.use(express.json({ limit: '5mb' })) // Prevents massive payload attacks but allows typical batch arrays
 
 //analytics middleware should be attached after auth middleware so it can access req.user 
 app.use(analyticsMiddleware) 

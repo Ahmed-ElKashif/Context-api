@@ -7,10 +7,22 @@ import { DocumentModel } from '../documents/document.model'
 
 // 1. Define the Comparison Output Schema
 const ComparisonSchema = z.object({
-  similarities: z.array(z.string()),
-  differences: z.array(z.string()),
-  uniqueToA: z.array(z.string()),
-  uniqueToB: z.array(z.string())
+  synthesis: z
+    .string()
+    .describe(
+      'A 2-3 sentence overarching summary of how the documents compare, highlighting the most critical shifts or themes.'
+    ),
+  similarityPercentage: z
+    .number()
+    .min(0)
+    .max(100)
+    .describe('An estimated percentage of semantic similarity between 0 and 100.'),
+  similarities: z.array(z.string()).describe('Key shared concepts between the two documents.'),
+  differences: z.array(z.string()).describe('Key differences between the two documents.'),
+  uniqueToA: z.array(z.string()).describe('Important points found ONLY in Document A (Base File).'),
+  uniqueToB: z
+    .array(z.string())
+    .describe('Important points found ONLY in Document B (Comparison File).')
 })
 
 export type ComparisonResult = z.infer<typeof ComparisonSchema>
@@ -50,7 +62,11 @@ export class DeepThinkerService {
     this._fallback = fallback
   }
 
-  static async compareDocuments(userId: string, docIdA: string, docIdB: string): Promise<ComparisonResult> {
+  static async compareDocuments(
+    userId: string,
+    docIdA: string,
+    docIdB: string
+  ): Promise<ComparisonResult> {
     const [docA, docB] = await Promise.all([
       DocumentModel.findOne({ _id: docIdA, user: userId }),
       DocumentModel.findOne({ _id: docIdB, user: userId })
@@ -70,6 +86,9 @@ export class DeepThinkerService {
     // ==========================================
     // ATTEMPT 1: The 70B Professor
     // ==========================================
+    // ==========================================
+    // ATTEMPT 1: The 70B Professor
+    // ==========================================
     try {
       console.log(`[DeepThinker] Attempt 1: Performing High-Reasoning Comparison with 70B...`)
 
@@ -82,6 +101,8 @@ export class DeepThinkerService {
         - NO introductory text. NO closing remarks. NO markdown formatting.
         - Follow this structure exactly:
         {
+          "synthesis": "string (A 2-3 sentence summary explaining the biggest shift between the documents)",
+          "similarityPercentage": number (0 to 100),
           "similarities": ["string"],
           "differences": ["string"],
           "uniqueToA": ["string"],
@@ -107,18 +128,20 @@ export class DeepThinkerService {
         console.log(`[DeepThinker] Attempt 2: Fast-comparing with 8B model...`)
 
         const fallbackSystemMessage = new SystemMessage(`
-      You are a high-precision document analyst. 
-      You MUST return your analysis in strict JSON format.
-      DO NOT include any introductory text, explanations, or code blocks.
-      
-      The JSON must follow this exact structure:
-      {
-        "similarities": ["..."],
-        "differences": ["..."],
-        "uniqueToA": ["..."],
-        "uniqueToB": ["..."]
-      }
-    `)
+          You are a high-precision document analyst. 
+          You MUST return your analysis in strict JSON format.
+          DO NOT include any introductory text, explanations, or code blocks.
+          
+          The JSON must follow this exact structure:
+          {
+            "synthesis": "string (A brief summary of how the documents compare)",
+            "similarityPercentage": number (0 to 100),
+            "similarities": ["..."],
+            "differences": ["..."],
+            "uniqueToA": ["..."],
+            "uniqueToB": ["..."]
+          }
+        `)
 
         const fallbackChain = this._fallback.pipe(parser)
         const fallbackResult = await fallbackChain.invoke([fallbackSystemMessage, humanMessage])

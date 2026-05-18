@@ -23,7 +23,9 @@ import {
   bulkUpdateSemanticPaths,
   bulkDeleteDocuments,
   getDocumentById,
-  serveDocumentFile
+  serveDocumentFile,
+  reanalyzeDocument,
+  getDocumentStatuses
 } from './document.controller'
 
 const router = Router()
@@ -59,6 +61,10 @@ router.get('/', getAllDocuments)
 // Validates query parameters (q, page, limit)
 router.get('/search', validate(searchDocumentSchema), searchDocuments)
 
+// 📡 Route: GET /api/documents/status
+// Lightweight endpoint for polling document aiStatus
+router.get('/status', getDocumentStatuses)
+
 // 📁 Route: PUT /api/documents/bulk/semantic-paths
 // Validates the array of updates before hitting the DB
 router.put('/bulk/semantic-paths', validate(bulkUpdateSemanticSchema), bulkUpdateSemanticPaths)
@@ -83,6 +89,9 @@ router.put('/:id', validate(updateDocumentSchema), updateDocument)
 
 // Route: DELETE /api/documents/:id
 router.delete('/:id', deleteDocument)
+
+// Route: POST /api/documents/:id/reanalyze
+router.post('/:id/reanalyze', reanalyzeDocument)
 
 // ==========================================
 // 💬 RAG CHAT ROUTES (Scoped to Document ID)

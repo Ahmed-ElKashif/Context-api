@@ -137,7 +137,7 @@ export class UploadService {
       user: userId,
       title: title || `Snippet: ${extractedText.substring(0, 20)}...`,
       fileType: 'TextSnippet',
-      aiStatus: 'Analyzed',
+      aiStatus: 'Pending',
       cognitiveLoad: 'Light',
       extractedText,
       tags: tags ? JSON.parse(tags) : [],
@@ -149,6 +149,11 @@ export class UploadService {
 
     // Bump the folder's updatedAt so it sorts correctly in the library
     await Folder.findByIdAndUpdate(randomFilesFolder._id, { updatedAt: new Date() })
+
+    // ── Fire-and-forget AI enrichment ─────────────────────────────────────
+    AIService.processPendingDocuments([snippet._id.toString()]).catch((err) => {
+      console.error('[UploadService] Background AI processing failed for TextSnippet:', err)
+    })
 
     return snippet
   }
