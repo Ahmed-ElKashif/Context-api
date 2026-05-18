@@ -7,6 +7,7 @@ import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages
 import { ChatMessageModel } from '../ai/chat.model'
 import { EmbeddingService } from '../ai/vector.service'
 import mongoose from 'mongoose'
+import { AppError } from '../../core/errors/AppError'
 
 const cloudinary = configureCloudinary()
 
@@ -128,10 +129,22 @@ export class DocumentService {
 
   // 4. Bulk Update Semantic Paths
   static async bulkUpdatePaths(userId: string, updates: { documentId: string; newPath: string }[]) {
+    // 🛠️ Check if any of these documents are already organized
+    const documentIds = updates.map(u => u.documentId)
+    const alreadyOrganizedDocs = await DocumentModel.find({
+      _id: { $in: documentIds },
+      user: userId,
+      isOrganized: true
+    })
+
+    if (alreadyOrganizedDocs.length > 0) {
+      throw new AppError('One or more selected documents are already organized.', 400)
+    }
+
     const bulkOps = updates.map((update) => ({
       updateOne: {
         filter: { _id: update.documentId, user: userId },
-        update: { $set: { semanticPath: update.newPath } }
+        update: { $set: { semanticPath: update.newPath, isOrganized: true } }
       }
     }))
 
@@ -155,6 +168,9 @@ export class DocumentService {
     const folderId = document.folder
 
     await document.deleteOne()
+
+    // 🗑️ Purge all semantic chunks from Vector Store
+    await EmbeddingService.deleteDocumentChunks(docId, userId)
 
     // 🛠️ THE FIX 3: Update the parent folder's timestamp when a document is deleted!
     if (folderId) {
@@ -186,6 +202,9 @@ export class DocumentService {
     ]
 
     const result = await DocumentModel.deleteMany(query)
+
+    // 🗑️ Purge all semantic chunks from Vector Store
+    await EmbeddingService.deleteDocumentChunks(ids, userId)
 
     // 🛠️ THE FIX 4: Update timestamps for all affected folders at once!
     if (folderIdsToUpdate.length > 0) {
