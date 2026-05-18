@@ -368,7 +368,8 @@ export class AIService {
               name: part,
               user: userId,
               parentFolder: currentParentId,
-              path: accumulatedPath
+              path: accumulatedPath,
+              isAIGenerated: true
             }
           },
           { upsert: true, new: true } // Return the newly created/found doc
