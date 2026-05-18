@@ -3,20 +3,19 @@ import { UserService } from './user.service'
 import { AppError } from '../../core/errors/AppError'
 import { configureCloudinary } from '../../config/cloudinary'
 import { User } from './user.model'
+// NEW: Import the TokenBudgetService
+import { TokenBudgetService } from '../../core/services/token-budget.service'
 
 const extractCloudinaryPublicIdFromUrl = (url?: string): string | null => {
   if (!url) return null
   try {
     const parsed = new URL(url)
-    // Expected path format includes: /<cloud>/image/upload/v123/folder/file.ext
     const uploadIdx = parsed.pathname.indexOf('/upload/')
     if (uploadIdx === -1) return null
 
     let afterUpload = parsed.pathname.slice(uploadIdx + '/upload/'.length)
-    // Remove optional transformation/version prefix like v1710000000/
     afterUpload = afterUpload.replace(/^v\d+\//, '')
 
-    // Remove extension to get public_id
     const withoutExt = afterUpload.replace(/\.[^/.]+$/, '')
     return withoutExt || null
   } catch {
@@ -30,7 +29,7 @@ export const getUserProfile = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    const userId = req.user?._id?.toString() || (req as any).user?.id // Strict typings
+    const userId = req.user?._id?.toString() || (req as any).user?.id
     if (!userId) return next(new AppError('Unauthorized', 401))
 
     const user = await UserService.getProfileById(userId)
@@ -106,7 +105,6 @@ export const uploadUserAvatar = async (
     const user = await User.findById(userId)
     if (!user) return next(new AppError('User not found', 404))
 
-    // Upload via data URI to keep implementation simple and type-safe.
     const dataUri = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`
     const uploadResult: any = await cloudinary.uploader.upload(dataUri, {
       folder: 'avatars',
@@ -120,7 +118,6 @@ export const uploadUserAvatar = async (
     user.avatarPublicId = uploadResult.public_id
     await user.save()
 
-    // Best-effort cleanup: deleting old Cloudinary image should not block profile update.
     if (previousPublicId && previousPublicId !== uploadResult.public_id) {
       try {
         await cloudinary.uploader.destroy(previousPublicId, { resource_type: 'image' })
@@ -138,6 +135,45 @@ export const uploadUserAvatar = async (
       persona: user.persona,
       createdAt: user.createdAt
     }})
+  } catch (error) {
+    next(error)
+  }
+}
+
+// ─── NEW METHOD: Get Settings + Token Usage ─────────────────────────────────
+
+export const getUserSettings = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id?.toString() || (req as any).user?.id
+    if (!userId) return next(new AppError('Unauthorized', 401))
+
+    const user = await User.findById(userId)
+    if (!user) {
+      return next(new AppError('User not found', 404))
+    }
+
+    // Fetch today's token consumption
+    const budgetStatus = await TokenBudgetService.checkBudget(userId)
+
+    res.status(200).json({
+      success: true,
+      data: {
+        // Note: I used (user as any) here just in case theme/notifications 
+        // aren't formally added to your TS User interface yet.
+        theme: (user as any).theme || 'system',
+        notificationsEnabled: (user as any).notificationsEnabled ?? true,
+        language: (user as any).language || 'en',
+        aiUsage: {
+          tokensUsed: budgetStatus.tokensUsed,
+          dailyLimit: budgetStatus.limit,
+          remaining: budgetStatus.remaining
+        }
+      }
+    })
   } catch (error) {
     next(error)
   }
