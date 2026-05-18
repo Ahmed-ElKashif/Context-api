@@ -10,18 +10,28 @@ export const askAISchema = z.object({
 
 // 🧠 Validate Semantic Folder Generation (The AI Proposal)
 export const generateSemanticStructureSchema = z.object({
-  body: z.object({
-    documents: z
-      .array(
-        z.object({
-          _id: z.string().optional(), // Allow _id or id
-          id: z.string().optional(),
-          // 🛠️ THE FIX: Use .min(1) to ensure it exists AND isn't an empty string
-          title: z.string().min(1, 'Each document must have a title for the AI to analyze')
-        })
-      )
-      .min(1, 'Must provide at least one document to organize')
-  })
+  body: z
+    .object({
+      documents: z
+        .array(
+          z.object({
+            _id: z.string().optional(), // Allow _id or id
+            id: z.string().optional(),
+            // 🛠️ THE FIX: Use .min(1) to ensure it exists AND isn't an empty string
+            title: z.string().min(1, 'Each document must have a title for the AI to analyze')
+          })
+        )
+        .optional(),
+      folderIds: z.array(z.string()).optional()
+    })
+    .refine(
+      (data) =>
+        (data.documents && data.documents.length > 0) ||
+        (data.folderIds && data.folderIds.length > 0),
+      {
+        message: 'Must provide at least one document or folder to organize'
+      }
+    )
 })
 
 // 📁 Validate Applying Physical Folders (The Final Boss)
@@ -54,6 +64,9 @@ export const semanticSearchSchema = z.object({
 
 export const synthesizeDocumentsSchema = z.object({
   body: z.object({
-    documentIds: z.array(z.string()).min(1, 'You must provide at least one document ID to analyze.')
+    documentIds: z.array(z.string()).optional(),
+    folderIds: z.array(z.string()).optional()
+  }).refine(data => (data.documentIds && data.documentIds.length > 0) || (data.folderIds && data.folderIds.length > 0), {
+    message: 'You must provide at least one document or folder to analyze.'
   })
 })

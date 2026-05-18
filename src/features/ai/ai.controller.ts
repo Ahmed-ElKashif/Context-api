@@ -20,6 +20,9 @@ function getLatency(res: Response): number {
 
 // ─── Controllers ─────────────────────────────────────────────────────────────
 
+import { DocumentModel } from '../documents/document.model'
+import Folder from '../folders/folder.model'
+
 /**
  * Analyzes a batch of unstructured documents and generates a proposed
  * relational folder structure based on semantic context (GPT-4o-mini).
@@ -32,7 +35,48 @@ export const generateSemanticStructure = async (
 ): Promise<void> => {
   try {
     const userId = (req as any).user._id
-    const { documents } = req.body
+    let { documents, folderIds } = req.body
+
+    documents = documents || []
+
+    // If folderIds are provided, fetch all documents recursively inside those folders
+    if (folderIds && folderIds.length > 0) {
+      const targetFolders = await Folder.find({ _id: { $in: folderIds }, user: userId }).select('_id path')
+      const allFolderIds = new Set<string>()
+
+      for (const folder of targetFolders) {
+        allFolderIds.add(folder._id.toString())
+        const escapedPath = folder.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const subfolders = await Folder.find({
+          user: userId,
+          path: { $regex: `^${escapedPath}/` }
+        }).select('_id')
+        
+        subfolders.forEach(sf => allFolderIds.add(sf._id.toString()))
+      }
+
+      const folderDocs = await DocumentModel.find({ 
+        user: userId, 
+        folder: { $in: Array.from(allFolderIds) } 
+      }).select('_id title')
+
+      const existingIds = new Set(documents.map((d: any) => d._id || d.id))
+      
+      for (const fDoc of folderDocs) {
+        if (!existingIds.has(fDoc._id.toString())) {
+          documents.push({ _id: fDoc._id.toString(), title: fDoc.title })
+          existingIds.add(fDoc._id.toString())
+        }
+      }
+    }
+
+    if (documents.length === 0) {
+      res.status(400).json({
+        success: false,
+        message: 'No valid documents found in the selection to organize.'
+      })
+      return
+    }
 
     const proposedUpdates = await AIService.generateSemanticProposal(userId, documents)
 
@@ -135,10 +179,41 @@ export const synthesizeDocuments = async (
 ): Promise<void> => {
   try {
     const userId = (req as any).user._id
-    const { documentIds } = req.body
+    let { documentIds, folderIds } = req.body
 
-    if (!documentIds || !Array.isArray(documentIds) || documentIds.length === 0) {
-      return next(new AppError('Please provide an array of documentIds.', 400))
+    documentIds = documentIds || []
+
+    if (folderIds && folderIds.length > 0) {
+      const targetFolders = await Folder.find({ _id: { $in: folderIds }, user: userId }).select('_id path')
+      const allFolderIds = new Set<string>()
+
+      for (const folder of targetFolders) {
+        allFolderIds.add(folder._id.toString())
+        const escapedPath = folder.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const subfolders = await Folder.find({
+          user: userId,
+          path: { $regex: `^${escapedPath}/` }
+        }).select('_id')
+        
+        subfolders.forEach(sf => allFolderIds.add(sf._id.toString()))
+      }
+
+      const folderDocs = await DocumentModel.find({
+        user: userId,
+        folder: { $in: Array.from(allFolderIds) }
+      }).select('_id')
+      
+      const existingIds = new Set(documentIds)
+      for (const fDoc of folderDocs) {
+        if (!existingIds.has(fDoc._id.toString())) {
+          documentIds.push(fDoc._id.toString())
+          existingIds.add(fDoc._id.toString())
+        }
+      }
+    }
+
+    if (!documentIds || !Array.isArray(documentIds) || documentIds.length < 2) {
+      return next(new AppError('Please select at least 2 documents to synthesize.', 400))
     }
 
     const bulkSummary = await AIService.synthesizeDocuments(documentIds, userId)
