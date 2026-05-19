@@ -12,7 +12,8 @@ import {
   renameFolder,
   deleteFolder,
   getFolderTree,
-  proposeSemanticFolders
+  proposeSemanticFolders,
+  downloadFolderZip // 📦 NEW: Import the ZIP export controller
 } from './folder.controller'
 
 const router = Router()
@@ -39,6 +40,9 @@ router.get('/', getFolderContents)
 // ==========================================
 // 🔄 DYNAMIC ROUTES (/:id or /:folderId)
 // ==========================================
+
+// 📦 Export a folder (and all contents) to a ZIP file
+router.get('/:id/download', downloadFolderZip)
 
 // ✏️ Rename a folder (Validated)
 router.put('/:id/rename', validate(updateFolderSchema), renameFolder)

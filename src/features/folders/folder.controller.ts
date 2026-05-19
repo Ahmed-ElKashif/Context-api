@@ -3,6 +3,7 @@ import { FolderService } from './folder.service'
 import { AppError } from '../../core/errors/AppError'
 import { FolderProposerService } from '../ai/folder-proposer.service'
 import { estimateTokens } from '../../core/services/token-budget.service'
+import archiver from 'archiver' // 📦 NEW: Import archiver
 
 export const createFolder = async (
   req: Request,
@@ -29,8 +30,8 @@ export const createFolder = async (
 }
 
 export const getFolderContents = async (
-  req: Request, 
-  res: Response, 
+  req: Request,
+  res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
@@ -38,35 +39,35 @@ export const getFolderContents = async (
     if (!userId) return next(new AppError('Unauthorized', 401))
 
     // 🛠️ Explicitly cast folderId as a string
-    const folderId = req.params.folderId as string;
+    const folderId = req.params.folderId as string
 
-    const isRoot = !folderId || folderId === 'root';
-    const targetFolderId = isRoot ? null : folderId;
+    const isRoot = !folderId || folderId === 'root'
+    const targetFolderId = isRoot ? null : folderId
 
     const page = parseInt(req.query.page as string, 10) || 1
     const limit = parseInt(req.query.limit as string, 10) || 10
     const skip = (page - 1) * limit
-    
+
     // 🔍 Extract search and tags from the query string
-    const search = req.query.search as string;
-    const tags = req.query.tags as string;
+    const search = req.query.search as string
+    const tags = req.query.tags as string
 
     // 🛠️ THE ROBUST FIX: Extract sorting variables and enforce 1 or -1
-    const sortBy = (req.query.sortBy as string) || 'updatedAt';
-    const rawSortOrder = String(req.query.sortOrder).toLowerCase();
-    const sortOrder = (rawSortOrder === 'asc' || rawSortOrder === '1') ? 1 : -1;
+    const sortBy = (req.query.sortBy as string) || 'updatedAt'
+    const rawSortOrder = String(req.query.sortOrder).toLowerCase()
+    const sortOrder = rawSortOrder === 'asc' || rawSortOrder === '1' ? 1 : -1
 
     // 🛠️ Pass EVERYTHING down to the service!
     const result = await FolderService.getContents(
-      userId, 
+      userId,
       targetFolderId,
-      skip, 
-      limit, 
-      search, 
+      skip,
+      limit,
+      search,
       tags,
       sortBy,
       sortOrder
-    );
+    )
 
     res.status(200).json({
       success: true,
@@ -78,7 +79,7 @@ export const getFolderContents = async (
       },
       data: {
         currentFolder: result.currentFolder,
-        breadcrumbs: result.breadcrumbs, 
+        breadcrumbs: result.breadcrumbs,
         folders: result.folders,
         documents: result.documents
       }
@@ -211,11 +212,71 @@ export const proposeSemanticFolders = async (
         documentCount,
         wasCapped,
         ...(wasCapped && {
-          capWarning: 'Only the 100 most recently analyzed documents were included in this proposal.'
+          capWarning:
+            'Only the 100 most recently analyzed documents were included in this proposal.'
         })
       }
     })
   } catch (error) {
     next(error)
   }
-}
+}
+
+// ==========================================
+// 📦 ZIP EXPORT CONTROLLER
+// ==========================================
+
+export const downloadFolderZip = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id?.toString() || (req as any).user?.id
+    if (!userId) return next(new AppError('Unauthorized', 401))
+
+    const folderId = req.params.id as string
+    if (!folderId) {
+      return next(new AppError('Folder ID is required', 400))
+    }
+
+    // 1. Tell the browser to expect a file download
+    res.setHeader('Content-Type', 'application/zip')
+    res.setHeader('Content-Disposition', `attachment; filename="smart_folder_export.zip"`)
+
+    // 2. Initialize the archiver
+    const archive = archiver('zip', {
+      zlib: { level: 9 } // Maximum compression
+    })
+
+    // 3. Handle Archiver events
+    archive.on('warning', (err) => {
+      if (err.code === 'ENOENT') {
+        console.warn('[ZIP Warning]', err)
+      } else {
+        throw err
+      }
+    })
+
+    archive.on('error', (err) => {
+      throw err
+    })
+
+    // 4. Pipe the archive stream DIRECTLY to the Express Response
+    archive.pipe(res)
+
+    // 5. Trigger the Service logic to start streaming Cloudinary files into the archive
+    await FolderService.exportFolderToZip(userId, folderId, archive)
+
+    // 6. Tell archiver we are done appending files so it can close the stream
+    await archive.finalize()
+  } catch (error) {
+    // If the headers were already sent, we can't send a JSON error, we just have to end the connection
+    if (res.headersSent) {
+      console.error('[ZIP Export Error - Connection Terminated]:', error)
+      res.end()
+    } else {
+      next(error)
+    }
+  }
+}
