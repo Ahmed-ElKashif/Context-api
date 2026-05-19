@@ -10,7 +10,7 @@ import { MemorySaver } from '@langchain/langgraph'
  * @description Defines the output structure expected from the Orchestrator Agent.
  */
 export interface DocumentMetadata {
-  type: 'PDF' | 'Word' | 'Image' | 'TextSnippet'
+  type: 'PDF' | 'Word' | 'Image' | 'TextSnippet' | 'Excel'
   summary: string
   tags: string[]
   cognitiveLoad: 'Light' | 'Medium' | 'Heavy'
@@ -63,8 +63,8 @@ export class OrchestratorService {
       description:
         'Call this tool FIRST to classify the document type and generate a concise summary.',
       schema: z.object({
-        type: z.enum(['PDF', 'Word', 'Image', 'TextSnippet']),
-        summary: z.string().describe('A clear, 6-10 sentence summary of the document content.')
+        type: z.enum(['PDF', 'Word', 'Image', 'TextSnippet', 'Excel']),
+        summary: z.string().describe('A clear, 7-10 sentence summary of the document content.')
       })
     }
   )
