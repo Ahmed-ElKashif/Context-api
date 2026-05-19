@@ -11,6 +11,8 @@ export interface IUser extends Document {
   avatar?: string
   avatarPublicId?: string
   isSuspended?: boolean            // ← added (needed by admin suspend endpoint)
+  lastActiveDocumentId?: mongoose.Types.ObjectId | string
+  lastActiveComparisonId?: mongoose.Types.ObjectId | string
   files?: IDocument[]
   createdAt: Date
   updatedAt: Date
@@ -47,7 +49,9 @@ const userSchema = new Schema<IUser>(
     },
     avatar: { type: String, required: false },
     avatarPublicId: { type: String, required: false },
-    isSuspended: { type: Boolean, default: false }
+    isSuspended: { type: Boolean, default: false },
+    lastActiveDocumentId: { type: Schema.Types.Mixed, required: false },
+    lastActiveComparisonId: { type: Schema.Types.ObjectId, ref: 'ComparisonRecord', required: false }
   },
   {
     timestamps: true

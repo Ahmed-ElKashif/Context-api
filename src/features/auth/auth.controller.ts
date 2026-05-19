@@ -23,6 +23,8 @@ export const register = async (req: Request, res: Response, next: NextFunction):
         persona: result.user?.persona,
         avatar: (result.user as any)?.avatar,
         role: result.user?.role ?? 'user',   // ← added
+        lastActiveDocumentId: (result.user as any)?.lastActiveDocumentId,
+        lastActiveComparisonId: (result.user as any)?.lastActiveComparisonId,
       }
     })
   } catch (error) {
@@ -51,6 +53,8 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
         persona: result.user?.persona,
         avatar: (result.user as any)?.avatar,
         role: result.user?.role ?? 'user',   // ← added
+        lastActiveDocumentId: (result.user as any)?.lastActiveDocumentId,
+        lastActiveComparisonId: (result.user as any)?.lastActiveComparisonId,
       }
     })
   } catch (error) {

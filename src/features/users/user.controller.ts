@@ -47,6 +47,8 @@ export const getUserProfile = async (
         email: user.email,
         avatar: (user as any).avatar,
         persona: user.persona,
+        lastActiveDocumentId: (user as any).lastActiveDocumentId,
+        lastActiveComparisonId: (user as any).lastActiveComparisonId,
         createdAt: user.createdAt
       }
     })
@@ -79,6 +81,8 @@ export const updateUserProfile = async (
         email: result.user?.email,
         avatar: result.user?.avatar,
         persona: result.user?.persona,
+        lastActiveDocumentId: (result.user as any)?.lastActiveDocumentId,
+        lastActiveComparisonId: (result.user as any)?.lastActiveComparisonId,
         createdAt: result.user?.createdAt
       }
     })
@@ -133,6 +137,8 @@ export const uploadUserAvatar = async (
       email: user.email,
       avatar: user.avatar,
       persona: user.persona,
+      lastActiveDocumentId: (user as any).lastActiveDocumentId,
+      lastActiveComparisonId: (user as any).lastActiveComparisonId,
       createdAt: user.createdAt
     }})
   } catch (error) {
