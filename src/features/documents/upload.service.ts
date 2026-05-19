@@ -11,6 +11,13 @@ const cloudinary = configureCloudinary()
 
 const getFileTypeFromMime = (mimeType: string): DocumentType => {
   if (mimeType.includes('pdf')) return 'PDF'
+  if (
+    mimeType.includes('excel') ||
+    mimeType.includes('spreadsheetml') ||
+    mimeType.includes('csv')
+  ) {
+    return 'Excel'
+  }
   if (mimeType.includes('word') || mimeType.includes('officedocument')) return 'Word'
   if (mimeType.includes('image')) return 'Image'
   return 'TextSnippet'
@@ -21,6 +28,7 @@ const getCloudinaryFolder = (docType: DocumentType): string => {
     case 'PDF':    return 'documents/pdf'
     case 'Image':  return 'documents/images'
     case 'Word':   return 'documents/word'
+    case 'Excel':  return 'documents/excel'
     default:       return 'documents/other'
   }
 }
