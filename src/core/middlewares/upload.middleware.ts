@@ -1,7 +1,7 @@
 import multer from 'multer'
 import { AppError } from '../errors/AppError'
 
-// Allowed MIME types — PDFs, Word Docs, and Images
+// Allowed MIME types — PDFs, Word Docs, Images, and Spreadsheets
 const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCallback) => {
   const allowedMimeTypes = [
     'application/pdf', // PDFs
@@ -10,7 +10,11 @@ const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCa
     'image/jpeg',
     'image/jpg',
     'image/png',
-    'image/webp'
+    'image/webp',
+    // 📊 NEW: Spreadsheet Formats
+    'application/vnd.ms-excel', // Excel (.xls)
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // Excel (.xlsx)
+    'text/csv' // CSVs
   ]
 
   // Add this line to see exactly what Postman is trying to sneak past the bouncer:

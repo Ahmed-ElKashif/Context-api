@@ -5,6 +5,7 @@ import { EmbeddingService } from './vector.service'
 import { OrchestratorService } from './orchestrator.service'
 import { PDFParse } from 'pdf-parse'
 import mammoth from 'mammoth'
+import * as xlsx from 'xlsx'
 import { SynthesizerAgent } from './synthesizer.service'
 import { VisualCortexService } from './visual-cortex.service'
 import { z } from 'zod'
@@ -12,7 +13,10 @@ import { ChatOpenAI } from '@langchain/openai'
 import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { SystemMessage, HumanMessage } from '@langchain/core/messages'
 import { CognitiveLoadService } from './cognitive-load.service'
-import { TokenBudgetService, estimateDocumentPipelineTokens } from '../../core/services/token-budget.service'
+import {
+  TokenBudgetService,
+  estimateDocumentPipelineTokens
+} from '../../core/services/token-budget.service'
 import { AppError } from '../../core/errors/AppError'
 
 // ─── Module-level default (production) ──────────────────────────────────────
@@ -153,6 +157,28 @@ export class AIService {
             const imageBuffer = await this.downloadFromCloudinary(doc.cloudinaryUrl)
             const base64Data = imageBuffer.toString('base64')
             rawText = await VisualCortexService.extractImageContent(base64Data, 'image/jpeg')
+            break
+
+          // 📊 NEW: Excel & CSV Extraction
+          case 'Excel':
+            if (!doc.cloudinaryUrl) throw new Error('Excel missing Cloudinary URL')
+            const excelBuffer = await this.downloadFromCloudinary(doc.cloudinaryUrl)
+
+            // Read the file buffer into a workbook
+            const workbook = xlsx.read(excelBuffer, { type: 'buffer' })
+            let combinedExcelText = ''
+
+            // Iterate through every sheet in the workbook
+            for (const sheetName of workbook.SheetNames) {
+              const worksheet = workbook.Sheets[sheetName]
+              // Convert each sheet to a CSV string (Highly token-efficient for LLMs)
+              const csvData = xlsx.utils.sheet_to_csv(worksheet)
+
+              if (csvData.trim()) {
+                combinedExcelText += `--- Sheet: ${sheetName} ---\n${csvData}\n\n`
+              }
+            }
+            rawText = combinedExcelText
             break
 
           default:
@@ -329,8 +355,10 @@ export class AIService {
 
     // Pre-fetch old folder IDs before moving documents to prune ghost folders afterwards
     const documentIds = updates.map((u) => u.documentId).filter(Boolean)
-    const docsToMove = await DocumentModel.find({ _id: { $in: documentIds }, user: userId }).select('folder')
-    const oldFolderIds = [...new Set(docsToMove.map(d => d.folder?.toString()).filter(Boolean))]
+    const docsToMove = await DocumentModel.find({ _id: { $in: documentIds }, user: userId }).select(
+      'folder'
+    )
+    const oldFolderIds = [...new Set(docsToMove.map((d) => d.folder?.toString()).filter(Boolean))]
 
     // 1. Pre-fetch existing folders into memory (O(1) lookups!)
     const existingFolders = await Folder.find({ user: userId }).select('_id path')
@@ -436,33 +464,46 @@ export class AIService {
   /**
    * Performs a global semantic search across all documents owned by the user.
    * STRICT SECURITY: preFilter completely isolates the vector space to the specific user.
+   * DEDUPLICATION: Ensures only the single highest-scoring chunk per document is returned.
    */
   static async semanticSearch(userId: string, query: string) {
-    // 🛠️ FIX 1: Added the missing 'await'
     const vectorStore = await EmbeddingService.getVectorStore()
 
     console.log(`[Global Search] Scanning vector space for user ${userId}...`)
 
-    // similaritySearchWithScore returns an array of tuples: [Document, score]
-    const results = await vectorStore.similaritySearchWithScore(query, 5, {
+    // 1. OVER-FETCH: Ask for 15 chunks instead of 5 to ensure a diverse pool
+    const rawResults = await vectorStore.similaritySearchWithScore(query, 15, {
       preFilter: {
-        // Keep it explicit with $eq just to be absolutely safe with Atlas Search
         userId: { $eq: new mongoose.Types.ObjectId(userId) }
       }
     })
 
-    if (results.length === 0) return []
+    if (rawResults.length === 0) return []
 
-    // 🛠️ FIX 2: Hydrate the results with actual Document metadata
-    // First, extract all unique document IDs from the vector results
-    const uniqueDocIds = [...new Set(results.map(([chunk]) => chunk.metadata.documentId))]
+    // 2. DEDUPLICATE: Keep only the highest-scoring chunk per document
+    const uniqueResults = []
+    const seenDocIds = new Set<string>()
 
-    // Fetch the actual document titles and types from MongoDB
+    for (const [chunk, score] of rawResults) {
+      const docId = chunk.metadata.documentId.toString()
+
+      // Since results are sorted by score, the first time we see a docId, it's the highest score.
+      if (!seenDocIds.has(docId)) {
+        seenDocIds.add(docId)
+        uniqueResults.push([chunk, score] as const)
+      }
+
+      // Stop once we have 5 unique documents to send to the frontend
+      if (uniqueResults.length >= 5) break
+    }
+
+    // 3. Hydrate the unique results with actual Document metadata
+    const uniqueDocIds = [...seenDocIds]
+
     const actualDocuments = await DocumentModel.find({
       _id: { $in: uniqueDocIds }
     }).select('title fileType cloudinaryUrl')
 
-    // Create a lookup dictionary for blazing fast mapping
     const docLookup = actualDocuments.reduce(
       (acc, doc) => {
         acc[doc._id.toString()] = doc
@@ -471,8 +512,8 @@ export class AIService {
       {} as Record<string, any>
     )
 
-    // Map LangChain's raw output into a clean, hydrated frontend structure
-    return results.map(([chunk, score]) => {
+    // 4. Map to frontend structure
+    return uniqueResults.map(([chunk, score]) => {
       const docId = chunk.metadata.documentId.toString()
       const parentDoc = docLookup[docId]
 
@@ -480,7 +521,6 @@ export class AIService {
         text: chunk.pageContent,
         confidenceScore: Number((score * 100).toFixed(2)),
         documentId: docId,
-        // Provide the frontend with the UI details it actually needs!
         documentTitle: parentDoc?.title || 'Unknown Document',
         documentType: parentDoc?.fileType || 'Unknown',
         documentUrl: parentDoc?.cloudinaryUrl || null,
