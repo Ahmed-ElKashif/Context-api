@@ -20,4 +20,10 @@ router.get('/export/users', adminController.exportUsers)
 // PATCH /api/admin/users/:id/suspend → Suspend / unsuspend a user
 router.patch('/users/:id/suspend', adminController.toggleSuspend)
 
+// GET  /api/admin/ai-usage       → AI token consumption analytics
+router.get('/ai-usage', adminController.getAIUsage)
+
+// GET  /api/admin/ai-usage/user/:userId → Per-user AI usage history
+router.get('/ai-usage/user/:userId', adminController.getUserAIUsage)
+
 export default router

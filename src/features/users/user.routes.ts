@@ -1,19 +1,26 @@
-import { Router } from 'express'
-import { getUserProfile, updateUserProfile, uploadUserAvatar } from './user.controller'
-import { protect } from '../../core/middlewares/auth.middleware' // 🛠️ THE FIX: Updated name
-import { validate } from '../../core/middlewares/validate.middleware'
-import { updateProfileSchema } from './user.schema'
-import { uploadMemory } from '../../core/middlewares/upload.middleware'
+import { Router } from 'express';
+// 1. Import your existing controllers + the new getUserSettings
+import { 
+  getUserProfile, 
+  updateUserProfile, 
+  uploadUserAvatar, 
+  getUserSettings 
+} from './user.controller';
 
-const router = Router()
+// 2. Import 'protect' instead of 'requireAuth'
+import { protect } from '../../core/middlewares/auth.middleware';
 
-// Notice how we attach protect to secure these routes!
-// We can chain the HTTP methods since they share the same URL path.
-router
-  .route('/profile')
-  .get(protect, getUserProfile) // 🛠️ THE FIX: Updated name
-  .put(protect, validate(updateProfileSchema), updateUserProfile) // 🛠️ THE FIX: Updated name
+const router = Router();
 
-router.post('/avatar', protect, uploadMemory.single('file'), uploadUserAvatar)
+// Protect all routes below this middleware (or you can apply it to each route individually)
+router.use(protect);
 
-export default router
+// Existing routes (example structure based on standard REST conventions)
+router.get('/profile', getUserProfile);
+router.patch('/profile', updateUserProfile);
+router.post('/avatar', uploadUserAvatar);
+
+// 3. Your NEW Settings Route!
+router.get('/settings', getUserSettings);
+
+export default router; 

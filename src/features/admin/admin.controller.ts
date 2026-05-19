@@ -21,17 +21,17 @@ export const adminController = {
    */
   async getUsers(req: Request, res: Response, next: NextFunction) {
     try {
-      const search    = (req.query.search    as string) ?? ''
-      const page      = (req.query.page      as string) ?? '1'
-      const limit     = (req.query.limit     as string) ?? '10'
-      const sortBy    = (req.query.sortBy    as string) ?? 'createdAt'
-      const sortOrderRaw = (req.query.sortOrder as string) ?? 'desc'
+      const search = String(req.query.search ?? '')
+      const page = String(req.query.page ?? '1')
+      const limit = String(req.query.limit ?? '10')
+      const sortBy = String(req.query.sortBy ?? 'createdAt')
+      const sortOrderRaw = String(req.query.sortOrder ?? 'desc')
       const sortOrder = sortOrderRaw === 'asc' ? 'asc' as const : 'desc' as const
 
       const result = await adminService.getUsers({
         search,
         page: Math.max(1, parseInt(page, 10)),
-        limit: Math.min(100, Math.max(1, parseInt(limit, 10))), // cap at 100
+        limit: Math.min(100, Math.max(1, parseInt(limit, 10))),
         sortBy,
         sortOrder
       })
@@ -48,14 +48,14 @@ export const adminController = {
    */
   async toggleSuspend(req: Request, res: Response, next: NextFunction) {
     try {
-      const id = req.params.id as string
+      const { id } = req.params
       const { suspend } = req.body
 
       if (typeof suspend !== 'boolean') {
         return next(new AppError('suspend field must be a boolean', 400))
       }
 
-      const user = await adminService.toggleSuspend(id, suspend) 
+      const user = await adminService.toggleSuspend(id as string, suspend)
       res.status(200).json({
         success: true,
         message: `User ${suspend ? 'suspended' : 'unsuspended'} successfully`,
@@ -78,6 +78,33 @@ export const adminController = {
       res.setHeader('Content-Type', 'text/csv')
       res.setHeader('Content-Disposition', `attachment; filename="${filename}"`)
       res.status(200).send(csv)
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  /**
+   * GET /api/admin/ai-usage
+   * Returns AI token consumption analytics (this month + top users + daily chart data).
+   */
+  async getAIUsage(req: Request, res: Response, next: NextFunction) {
+    try {
+      const usage = await adminService.getAIUsage()
+      res.status(200).json({ success: true, data: usage })
+    } catch (error) {
+      next(error)
+    }
+  },
+
+  /**
+   * GET /api/admin/ai-usage/user/:userId
+   * Returns AI usage history for a specific user (last 30 days).
+   */
+  async getUserAIUsage(req: Request, res: Response, next: NextFunction) {
+    try {
+      const { userId } = req.params
+      const usage = await adminService.getUserAIUsage(userId as string)
+      res.status(200).json({ success: true, data: usage })
     } catch (error) {
       next(error)
     }
