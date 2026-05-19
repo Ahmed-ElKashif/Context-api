@@ -10,6 +10,8 @@ export interface IUser extends Document {
   persona: 'general' | 'professional' | 'student' | 'developer'
   avatar?: string
   avatarPublicId?: string
+  resetPasswordToken?: string
+  resetPasswordExpires?: Date
   isSuspended?: boolean            // ← added (needed by admin suspend endpoint)
   files?: IDocument[]
   createdAt: Date
@@ -47,6 +49,8 @@ const userSchema = new Schema<IUser>(
     },
     avatar: { type: String, required: false },
     avatarPublicId: { type: String, required: false },
+    resetPasswordToken: { type: String, required: false },
+    resetPasswordExpires: { type: Date, required: false },
     isSuspended: { type: Boolean, default: false }
   },
   {

@@ -57,3 +57,29 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
     next(error)
   }
 }
+
+export const forgotPassword = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { email } = req.body
+    const result = await AuthService.forgotPassword(email)
+    if (result.error) {
+      return next(new AppError(result.error.message, result.error.statusCode))
+    }
+    res.status(200).json({ success: true, message: 'Password reset link sent to your email.' })
+  } catch (error) {
+    next(error)
+  }
+}
+
+export const resetPassword = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { token, password } = req.body
+    const result = await AuthService.resetPassword(token, password)
+    if (result.error) {
+      return next(new AppError(result.error.message, result.error.statusCode))
+    }
+    res.status(200).json({ success: true, message: 'Password reset successful. You can now login.' })
+  } catch (error) {
+    next(error)
+  }
+}
