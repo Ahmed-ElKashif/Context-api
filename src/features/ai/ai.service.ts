@@ -231,8 +231,8 @@ export class AIService {
     // 2. Extract IDs and fetch the rich semantic metadata from the DB!
     const docIds = documents.map((d) => d._id || d.id).filter(Boolean) as string[]
     const dbDocs = await DocumentModel.find({ _id: { $in: docIds }, user: userId }).select(
-      '_id title summary tags fileType contentType isOrganized aiStatus'
-    )
+      '_id title summary tags fileType contentType isOrganized aiStatus folder originalClientPath semanticPath'
+    ).populate('folder')
 
     if (dbDocs.length === 0) return []
 
@@ -301,8 +301,33 @@ export class AIService {
     try {
       const response = await llm.invoke([systemPrompt, humanPrompt])
 
-      // Returns perfectly structured: [{ documentId: "...", newPath: "..." }]
-      return response.updates
+      // Enrich the updates with the original title and path so the frontend doesn't show raw IDs
+      const enrichedUpdates = response.updates.map((update: any) => {
+        const doc = dbDocs.find((d) => d._id.toString() === update.documentId)
+        let originalPath = doc?.title || update.documentId
+
+        if (doc) {
+          if (doc.semanticPath && doc.semanticPath !== '/') {
+            originalPath = `${doc.semanticPath}/${doc.title}`
+          } else if (doc.folder) {
+            const folderObj = doc.folder as any
+            const folderName = folderObj.path || folderObj.name
+            if (folderName) {
+              originalPath = `${folderName}/${doc.title}`
+            }
+          } else if (doc.originalClientPath && doc.originalClientPath !== doc.title) {
+            originalPath = doc.originalClientPath
+          }
+        }
+
+        return {
+          ...update,
+          title: doc?.title,
+          originalPath
+        }
+      })
+
+      return enrichedUpdates
     } catch (error: any) {
       if (
         error?.status === 429 ||
