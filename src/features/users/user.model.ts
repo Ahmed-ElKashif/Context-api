@@ -10,6 +10,8 @@ export interface IUser extends Document {
   persona: 'general' | 'professional' | 'student' | 'developer'
   avatar?: string
   avatarPublicId?: string
+  resetPasswordToken?: string
+  resetPasswordExpires?: Date
   isSuspended?: boolean            // ← added (needed by admin suspend endpoint)
   lastActiveDocumentId?: mongoose.Types.ObjectId | string
   lastActiveComparisonId?: mongoose.Types.ObjectId | string
@@ -51,7 +53,9 @@ const userSchema = new Schema<IUser>(
     avatarPublicId: { type: String, required: false },
     isSuspended: { type: Boolean, default: false },
     lastActiveDocumentId: { type: Schema.Types.Mixed, required: false },
-    lastActiveComparisonId: { type: Schema.Types.ObjectId, ref: 'ComparisonRecord', required: false }
+    lastActiveComparisonId: { type: Schema.Types.ObjectId, ref: 'ComparisonRecord', required: false },
+    resetPasswordToken: { type: String, required: false },
+    resetPasswordExpires: { type: Date, required: false },
   },
   {
     timestamps: true
