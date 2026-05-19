@@ -64,7 +64,7 @@ export class OrchestratorService {
         'Call this tool FIRST to classify the document type and generate a concise summary.',
       schema: z.object({
         type: z.enum(['PDF', 'Word', 'Image', 'TextSnippet']),
-        summary: z.string().describe('A clear, 2-3 sentence summary of the document content.')
+        summary: z.string().describe('A clear, 6-10 sentence summary of the document content.')
       })
     }
   )
