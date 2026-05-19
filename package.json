@@ -30,6 +30,8 @@
     "@langchain/mongodb": "1.2.0",
     "@langchain/openai": "1.4.5",
     "@langchain/textsplitters": "1.0.1",
+    "archiver": "^8.0.0",
+    "axios": "^1.16.1",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.10.0",
     "cors": "^2.8.6",
@@ -53,6 +55,7 @@
     "zod": "3.25.76"
   },
   "devDependencies": {
+    "@types/archiver": "^7.0.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",

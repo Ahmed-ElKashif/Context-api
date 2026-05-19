@@ -3,6 +3,8 @@ import Folder, { IFolder } from './folder.model'
 import { DocumentModel, IDocument } from '../documents/document.model'
 import { configureCloudinary } from '../../config/cloudinary'
 import { EmbeddingService } from '../ai/vector.service'
+import archiver from 'archiver'
+import axios from 'axios'
 
 const cloudinary = configureCloudinary()
 
@@ -48,7 +50,6 @@ export class FolderService {
   }
 
   // 2. Get Folder Contents (🛠️ THE PAGINATION FIX)
- // 2. Get Folder Contents (🛠️ THE PAGINATION FIX)
   static async getContents(
     userId: string,
     targetFolderId: string | null,
@@ -56,8 +57,8 @@ export class FolderService {
     limit: number,
     search?: string,
     tags?: string,
-    sortBy: string = 'updatedAt', // 🛠️ NEW: Accept sortBy
-    sortOrder: 1 | -1 = -1        // 🛠️ NEW: Accept sortOrder
+    sortBy: string = 'updatedAt',
+    sortOrder: 1 | -1 = -1
   ): Promise<{
     currentFolder: IFolder | null
     breadcrumbs: IFolder[]
@@ -65,61 +66,56 @@ export class FolderService {
     documents: IDocument[]
     totalDocuments: number
   }> {
-    
-    let docQuery: any = { user: userId };
-    if (!search && !tags) docQuery.folder = targetFolderId;
-    if (search) docQuery.$or = [
-      { title: { $regex: search, $options: 'i' } },
-      { tags: { $regex: search, $options: 'i' } }
-    ];
-    if (tags) docQuery.tags = tags;
+    let docQuery: any = { user: userId }
+    if (!search && !tags) docQuery.folder = targetFolderId
+    if (search)
+      docQuery.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { tags: { $regex: search, $options: 'i' } }
+      ]
+    if (tags) docQuery.tags = tags
 
-    const folderQuery = { user: userId, parentFolder: targetFolderId };
-    const folderCount = (!search && !tags) ? await Folder.countDocuments(folderQuery) : 0;
-    const documentCount = await DocumentModel.countDocuments(docQuery);
-    const totalDocuments = folderCount + documentCount;
+    const folderQuery = { user: userId, parentFolder: targetFolderId }
+    const folderCount = !search && !tags ? await Folder.countDocuments(folderQuery) : 0
+    const documentCount = await DocumentModel.countDocuments(docQuery)
+    const totalDocuments = folderCount + documentCount
 
-    let folders: IFolder[] = [];
-    let documents: IDocument[] = [];
+    let folders: IFolder[] = []
+    let documents: IDocument[] = []
 
     // 🛠️ THE FIX: Smart Sorting Objects!
-    // Folders use 'name' instead of 'title', but pinned folders always stay at the top!
-    const folderSortField = sortBy === 'title' ? 'name' : sortBy;
-    const folderSortOptions: any = { isPinned: -1, [folderSortField]: sortOrder };
-    
-    // Documents use whatever the frontend sends
-    const docSortOptions: any = { [sortBy]: sortOrder };
+    const folderSortField = sortBy === 'title' ? 'name' : sortBy
+    const folderSortOptions: any = { isPinned: -1, [folderSortField]: sortOrder }
+
+    const docSortOptions: any = { [sortBy]: sortOrder }
 
     if (!search && !tags) {
       if (skip < folderCount) {
-        const folderLimit = Math.min(limit, folderCount - skip);
+        const folderLimit = Math.min(limit, folderCount - skip)
         folders = await Folder.find(folderQuery)
-          .sort(folderSortOptions) // 🛠️ Applied here!
+          .sort(folderSortOptions)
           .skip(skip)
-          .limit(folderLimit);
+          .limit(folderLimit)
 
-        const remainingSpace = limit - folders.length;
+        const remainingSpace = limit - folders.length
         if (remainingSpace > 0) {
           documents = await DocumentModel.find(docQuery)
-            .sort(docSortOptions) // 🛠️ Applied here!
-            .skip(0) 
-            .limit(remainingSpace);
+            .sort(docSortOptions)
+            .skip(0)
+            .limit(remainingSpace)
         }
       } else {
-        const docSkip = skip - folderCount;
+        const docSkip = skip - folderCount
         documents = await DocumentModel.find(docQuery)
-          .sort(docSortOptions) // 🛠️ Applied here!
+          .sort(docSortOptions)
           .skip(docSkip)
-          .limit(limit);
+          .limit(limit)
       }
     } else {
-      documents = await DocumentModel.find(docQuery)
-        .sort(docSortOptions) // 🛠️ Applied here!
-        .skip(skip)
-        .limit(limit);
+      documents = await DocumentModel.find(docQuery).sort(docSortOptions).skip(skip).limit(limit)
     }
 
-    // 4. Breadcrumbs logic (unchanged)
+    // 4. Breadcrumbs logic
     let currentFolder: IFolder | null = null
     let breadcrumbs: IFolder[] = []
 
@@ -145,6 +141,7 @@ export class FolderService {
 
     return { currentFolder, breadcrumbs, folders, documents, totalDocuments }
   }
+
   // 3. Rename a Folder
   static async renameFolder(
     userId: string,
@@ -165,7 +162,7 @@ export class FolderService {
     const oldName = folder.name
     folder.name = newName
     folder.path = folder.path.replace(new RegExp(`${oldName}$`), newName)
-    folder.updatedAt = new Date(); // 🛠️ Explicitly force the timestamp to update
+    folder.updatedAt = new Date()
 
     await folder.save()
     return { folder }
@@ -198,7 +195,7 @@ export class FolderService {
         .filter((doc) => doc.cloudinaryPublicId)
         .map((doc) =>
           cloudinary.uploader.destroy(doc.cloudinaryPublicId!, {
-            resource_type: getResourceType(doc.fileType),
+            resource_type: getResourceType(doc.fileType)
           })
         )
     )
@@ -220,5 +217,88 @@ export class FolderService {
   // 5. Get Entire Folder Tree
   static async getTree(userId: string): Promise<IFolder[]> {
     return await Folder.find({ user: userId }).sort({ path: 1 })
+  }
+
+  // ==========================================
+  // 📦 ZIP EXPORT ENGINE
+  // ==========================================
+
+  /**
+   * Recursively finds all documents within a folder (and its subfolders),
+   * opens a read stream from Cloudinary, and pipes them directly into a ZIP archive.
+   */
+  static async exportFolderToZip(
+    userId: string,
+    folderId: string,
+    archive: archiver.Archiver
+  ): Promise<void> {
+    const rootFolder = await Folder.findOne({ _id: folderId, user: userId })
+    if (!rootFolder) throw new Error('Target folder not found.')
+
+    // 1. Fetch the root folder and ALL nested subfolders
+    const escapedPath = rootFolder.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const allFolders = await Folder.find({
+      user: userId,
+      path: { $regex: `^${escapedPath}(/|$)` }
+    })
+
+    // Create a fast lookup map for folder paths: FolderID -> "Parent/Child"
+    const folderPathMap = new Map<string, string>()
+    allFolders.forEach((f) => folderPathMap.set(f._id.toString(), f.path))
+
+    // 2. Fetch all physical documents inside these folders
+    const documents = await DocumentModel.find({
+      user: userId,
+      folder: { $in: allFolders.map((f) => f._id) }
+    })
+
+    if (documents.length === 0) {
+      archive.append('This folder is empty.', { name: 'empty_folder_notice.txt' })
+      return
+    }
+
+    // 3. Calculate the base path to trim (so the ZIP doesn't have an ugly nested structure)
+    const prefixToRemoveLength = rootFolder.path.length - rootFolder.name.length
+
+    // 4. Stream documents into the archive
+    for (const doc of documents) {
+      if (!doc.cloudinaryUrl) continue
+
+      // Calculate relative internal ZIP path
+      const fullFolderPath = folderPathMap.get(doc.folder!.toString()) || rootFolder.name
+      const relativeFolderPath = fullFolderPath.substring(prefixToRemoveLength)
+
+      // Ensure file has an extension (Cloudinary sometimes strips it, but users need it to open the file)
+      let fileName = doc.title
+      if (!fileName.includes('.')) {
+        const extMap: Record<string, string> = {
+          PDF: '.pdf',
+          Word: '.docx',
+          Image: '.jpg',
+          Excel: '.xlsx',
+          TextSnippet: '.txt'
+        }
+        fileName += extMap[doc.fileType] || ''
+      }
+
+      const zipFilePath = `${relativeFolderPath}/${fileName}`
+
+      try {
+        // 🚀 THE MAGIC: Stream the file directly from Cloudinary into the ZIP
+        // memory footprint stays close to zero, no matter how big the file is!
+        const response = await axios({
+          method: 'GET',
+          url: doc.cloudinaryUrl,
+          responseType: 'stream'
+        })
+
+        archive.append(response.data, { name: zipFilePath })
+      } catch (err) {
+        console.error(`[ZIP Export] Failed to stream ${doc.title}:`, err)
+        archive.append(`Failed to download this file from the server.`, {
+          name: `${zipFilePath}_error.txt`
+        })
+      }
+    }
   }
 }
