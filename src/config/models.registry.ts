@@ -9,6 +9,7 @@ import { EmbeddingService } from '../features/ai/vector.service'
 import { AIService } from '../features/ai/ai.service'
 import { FolderProposerService } from '../features/ai/folder-proposer.service'
 import { DocumentService } from '../features/documents/document.service'
+import { ComparisonService } from '../features/comparison/comparison.service'
 
 /**
  * @description Central model registry. Instantiates all LangChain model objects once
@@ -115,6 +116,14 @@ export class ModelRegistry {
       new ChatOpenAI({
         model: 'gpt-4o-mini',
         temperature: 0.5 // Slightly higher temp for conversational RAG responses
+      })
+    )
+
+    // ─── ComparisonService (GPT-4o-mini — RAG chat with dual compared documents) ────
+    ComparisonService.init(
+      new ChatOpenAI({
+        model: 'gpt-4o-mini',
+        temperature: 0.5 // Higher temp for collaborative thought partner
       })
     )
 
