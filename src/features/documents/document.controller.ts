@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express'
 import { AppError } from '../../core/errors/AppError'
 import { DocumentService } from './document.service'
 import { DocumentModel } from './document.model'
+import { aiEvents } from '../ai/ai.events'
 import { estimateTokens } from '../../core/services/token-budget.service'
 
 // @route   GET /api/documents
@@ -284,6 +285,48 @@ export const getDocumentStatuses = async (
     const documents = await DocumentModel.find({ _id: { $in: ids }, user: userId }).select('_id title aiStatus tags cognitiveLoad summary')
 
     res.status(200).json({ success: true, data: documents })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// @route   GET /api/documents/status/stream
+// SSE stream endpoint to notify client about real-time document aiStatus changes
+export const streamDocumentStatuses = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id?.toString()
+    if (!userId) {
+      res.status(401).json({ success: false, message: 'Unauthorized' })
+      return
+    }
+
+    // Set headers for Server-Sent Events (SSE)
+    res.setHeader('Content-Type', 'text/event-stream')
+    res.setHeader('Cache-Control', 'no-cache')
+    res.setHeader('Connection', 'keep-alive')
+    res.setHeader('X-Accel-Buffering', 'no') // Disable proxy buffering (e.g. Nginx)
+
+    // Send initial handshake event
+    res.write('retry: 10000\n') // Ask client to retry connection every 10s if closed
+    res.write(`data: ${JSON.stringify({ connected: true })}\n\n`)
+
+    const onStatusUpdate = (event: { userId: string; documentId: string; aiStatus: string; document?: any }) => {
+      if (event.userId === userId) {
+        res.write(`data: ${JSON.stringify(event)}\n\n`)
+      }
+    }
+
+    aiEvents.on('status-update', onStatusUpdate)
+
+    // Cleanup when browser closes the connection
+    req.on('close', () => {
+      aiEvents.off('status-update', onStatusUpdate)
+      res.end()
+    })
   } catch (error) {
     next(error)
   }
