@@ -127,4 +127,30 @@ export class TokenBudgetService {
       console.error('[TokenBudget] Failed to record usage:', error)
     }
   }
+
+  /**
+   * Calculates the total token usage for the current user in the current calendar month.
+   */
+  static async getMonthlyUsage(userId: string): Promise<{ tokensUsed: number; requestCount: number }> {
+    try {
+      const currentMonth = new Date().toISOString().slice(0, 7) // 'YYYY-MM'
+      const records = await TokenBudgetModel.find({
+        userId,
+        date: { $regex: new RegExp('^' + currentMonth) }
+      })
+
+      let tokensUsed = 0
+      let requestCount = 0
+
+      for (const rec of records) {
+        tokensUsed += rec.tokensUsed
+        requestCount += rec.requestCount
+      }
+
+      return { tokensUsed, requestCount }
+    } catch (error) {
+      console.error('[TokenBudget] Failed to get monthly usage:', error)
+      return { tokensUsed: 0, requestCount: 0 }
+    }
+  }
 }
