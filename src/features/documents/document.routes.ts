@@ -91,7 +91,7 @@ router.put('/:id', validate(updateDocumentSchema), updateDocument)
 router.delete('/:id', deleteDocument)
 
 // Route: POST /api/documents/:id/reanalyze
-router.post('/:id/reanalyze', reanalyzeDocument)
+router.post('/:id/reanalyze', checkTokenBudget, reanalyzeDocument)
 
 // ==========================================
 // 💬 RAG CHAT ROUTES (Scoped to Document ID)
@@ -101,6 +101,6 @@ router.post('/:id/reanalyze', reanalyzeDocument)
 router.get('/:id/chat', getDocumentChatHistory)
 
 // Route: POST /api/documents/:id/chat
-router.post('/:id/chat', chatWithDocument)
+router.post('/:id/chat', checkTokenBudget, chatWithDocument)
 
 export default router

@@ -11,6 +11,9 @@ export interface IUser extends Document {
   avatar?: string
   avatarPublicId?: string
   isSuspended?: boolean            // ← added (needed by admin suspend endpoint)
+  theme?: 'light' | 'dark' | 'system'
+  notificationsEnabled?: boolean
+  language?: string
   files?: IDocument[]
   createdAt: Date
   updatedAt: Date
@@ -47,7 +50,20 @@ const userSchema = new Schema<IUser>(
     },
     avatar: { type: String, required: false },
     avatarPublicId: { type: String, required: false },
-    isSuspended: { type: Boolean, default: false }
+    isSuspended: { type: Boolean, default: false },
+    theme: {
+      type: String,
+      enum: ['light', 'dark', 'system'],
+      default: 'system'
+    },
+    notificationsEnabled: {
+      type: Boolean,
+      default: true
+    },
+    language: {
+      type: String,
+      default: 'en'
+    }
   },
   {
     timestamps: true
