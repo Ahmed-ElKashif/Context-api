@@ -3,6 +3,7 @@ import { AppError } from '../../core/errors/AppError'
 import { DocumentService } from './document.service'
 import { DocumentModel } from './document.model'
 import { aiEvents } from '../ai/ai.events'
+import { estimateTokens } from '../../core/services/token-budget.service'
 
 // @route   GET /api/documents
 export const getAllDocuments = async (
@@ -371,6 +372,13 @@ export const chatWithDocument = async (req: Request, res: Response): Promise<voi
     }
 
     const aiResponse = await DocumentService.chatWithDocument(id, userId, message)
+
+    // Set AI meta for token-budget and logging middleware
+    res.locals.aiMeta = {
+      model: 'gpt-4o-mini',
+      tokensUsed: estimateTokens(message + aiResponse) + 1200, // prompt overhead + context window estimation
+      operation: 'document-chat'
+    }
 
     res.status(200).json({
       success: true,

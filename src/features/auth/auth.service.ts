@@ -73,7 +73,7 @@ export class AuthService {
       user.resetPasswordToken = undefined
       user.resetPasswordExpires = undefined
       await user.save()
-      return { error: { message: 'Failed to send password reset email', statusCode: 500 } }
+      return { success: false, error: { message: 'Failed to send password reset email', statusCode: 500 } }
     }
   }
 
@@ -84,7 +84,7 @@ export class AuthService {
     })
 
     if (!user) {
-      return { error: { message: 'Invalid or expired token', statusCode: 400 } }
+      return { success: false, error: { message: 'Invalid or expired token', statusCode: 400 } }
     }
 
     const salt = await bcrypt.genSalt(10)
