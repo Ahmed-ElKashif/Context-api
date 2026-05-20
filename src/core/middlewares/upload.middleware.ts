@@ -11,7 +11,7 @@ const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCa
     'image/jpg',
     'image/png',
     'image/webp',
-    // 📊 NEW: Spreadsheet Formats
+    //  Spreadsheet Formats
     'application/vnd.ms-excel', // Excel (.xls)
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // Excel (.xlsx)
     'text/csv' // CSVs
