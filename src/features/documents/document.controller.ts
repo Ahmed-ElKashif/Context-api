@@ -281,7 +281,7 @@ export const getDocumentStatuses = async (
     }
 
     const ids = idsParam.split(',')
-    const documents = await DocumentModel.find({ _id: { $in: ids }, user: userId }).select('_id title aiStatus tags cognitiveLoad')
+    const documents = await DocumentModel.find({ _id: { $in: ids }, user: userId }).select('_id title aiStatus tags cognitiveLoad summary')
 
     res.status(200).json({ success: true, data: documents })
   } catch (error) {

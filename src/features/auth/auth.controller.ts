@@ -23,6 +23,8 @@ export const register = async (req: Request, res: Response, next: NextFunction):
         persona: result.user?.persona,
         avatar: (result.user as any)?.avatar,
         role: result.user?.role ?? 'user',   // ← added
+        lastActiveDocumentId: (result.user as any)?.lastActiveDocumentId,
+        lastActiveComparisonId: (result.user as any)?.lastActiveComparisonId,
       }
     })
   } catch (error) {
@@ -51,8 +53,36 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
         persona: result.user?.persona,
         avatar: (result.user as any)?.avatar,
         role: result.user?.role ?? 'user',   // ← added
+        lastActiveDocumentId: (result.user as any)?.lastActiveDocumentId,
+        lastActiveComparisonId: (result.user as any)?.lastActiveComparisonId,
       }
     })
+  } catch (error) {
+    next(error)
+  }
+}
+
+export const forgotPassword = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { email } = req.body
+    const result = await AuthService.forgotPassword(email)
+    if (result.error) {
+      return next(new AppError(result.error.message, result.error.statusCode))
+    }
+    res.status(200).json({ success: true, message: 'Password reset link sent to your email.' })
+  } catch (error) {
+    next(error)
+  }
+}
+
+export const resetPassword = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { token, password } = req.body
+    const result = await AuthService.resetPassword(token, password)
+    if (result.error) {
+      return next(new AppError(result.error.message, result.error.statusCode))
+    }
+    res.status(200).json({ success: true, message: 'Password reset successful. You can now login.' })
   } catch (error) {
     next(error)
   }

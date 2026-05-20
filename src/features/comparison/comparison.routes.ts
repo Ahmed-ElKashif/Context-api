@@ -1,5 +1,12 @@
 import { Router } from 'express'
-import { compareDocuments } from './comparison.controller'
+import {
+  compareDocuments,
+  getComparisonChatHistory,
+  chatWithComparison,
+  getComparisonHistory,
+  getComparisonRecordById,
+  saveComparisonRecord
+} from './comparison.controller'
 import { protect } from '../../core/middlewares/auth.middleware'
 import { validate } from '../../core/middlewares/validate.middleware'
 import { checkTokenBudget } from '../../core/middlewares/token-budget.middleware'
@@ -11,7 +18,7 @@ const router = Router()
 // 🛡️ All comparison routes require authentication
 router.use(protect)
 
-// 🧠 Deep Comparison — DeepThinkerService (Groq 70B → 8B fallback)
+// 🧠 Deep Comparison — DeepThinkerService
 router.post(
   '/compare',
   checkTokenBudget,
@@ -19,5 +26,26 @@ router.post(
   validate(compareDocumentsSchema),
   compareDocuments
 )
+
+// ==========================================
+// 📚 HISTORY ROUTES
+// ==========================================
+router.route('/history')
+  .get(getComparisonHistory)
+  .post(saveComparisonRecord)
+
+router.get('/history/:id', getComparisonRecordById)
+
+
+// ==========================================
+// 💬 DUAL-DOCUMENT RAG CHAT ROUTES
+// ==========================================
+
+// 📜 Get Chat History for a specific document pair
+router.get('/:docIdA/:docIdB/chat', getComparisonChatHistory)
+
+// 🤖 Chat with Comparison (Dual-Document RAG)
+// Note: We apply checkTokenBudget here because this triggers an LLM inference
+router.post('/:docIdA/:docIdB/chat', checkTokenBudget, chatWithComparison)
 
 export default router

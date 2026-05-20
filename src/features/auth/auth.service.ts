@@ -1,6 +1,8 @@
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { User, IUser } from '../users/user.model'
+import crypto from 'crypto'
+import { sendResetPasswordEmail } from '../../core/services/mail.service'
 
 export class AuthService {
   static generateToken(id: string): string {
@@ -50,5 +52,48 @@ export class AuthService {
 
     const token = this.generateToken(user.id)
     return { user, token }
+  }
+
+  static async forgotPassword(email: string): Promise<{ success: boolean; error?: { message: string; statusCode: number } }> {
+    const user = await User.findOne({ email })
+    if (!user) {
+      return { success: true }
+    }
+
+    const resetToken = crypto.randomBytes(32).toString('hex')
+    
+    user.resetPasswordToken = resetToken
+    user.resetPasswordExpires = new Date(Date.now() + 3600000)
+    await user.save()
+
+    try {
+      await sendResetPasswordEmail(user.email, resetToken)
+      return { success: true }
+    } catch (err) {
+      user.resetPasswordToken = undefined
+      user.resetPasswordExpires = undefined
+      await user.save()
+      return { error: { message: 'Failed to send password reset email', statusCode: 500 } }
+    }
+  }
+
+  static async resetPassword(token: string, passwordStr: string): Promise<{ success: boolean; error?: { message: string; statusCode: number } }> {
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: new Date() }
+    })
+
+    if (!user) {
+      return { error: { message: 'Invalid or expired token', statusCode: 400 } }
+    }
+
+    const salt = await bcrypt.genSalt(10)
+    user.passwordHash = await bcrypt.hash(passwordStr, salt)
+    
+    user.resetPasswordToken = undefined
+    user.resetPasswordExpires = undefined
+    await user.save()
+
+    return { success: true }
   }
 }

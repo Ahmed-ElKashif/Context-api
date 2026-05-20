@@ -10,10 +10,14 @@ export interface IUser extends Document {
   persona: 'general' | 'professional' | 'student' | 'developer'
   avatar?: string
   avatarPublicId?: string
+  resetPasswordToken?: string
+  resetPasswordExpires?: Date
   isSuspended?: boolean            // ← added (needed by admin suspend endpoint)
   theme?: 'light' | 'dark' | 'system'
   notificationsEnabled?: boolean
   language?: string
+  lastActiveDocumentId?: mongoose.Types.ObjectId | string
+  lastActiveComparisonId?: mongoose.Types.ObjectId | string
   files?: IDocument[]
   createdAt: Date
   updatedAt: Date
@@ -63,7 +67,11 @@ const userSchema = new Schema<IUser>(
     language: {
       type: String,
       default: 'en'
-    }
+    },  
+    lastActiveDocumentId: { type: Schema.Types.Mixed, required: false } , // Can be ObjectId or string (for legacy data)
+    lastActiveComparisonId: { type: Schema.Types.ObjectId, ref: 'ComparisonRecord', required: false },
+    resetPasswordToken: { type: String, required: false },
+    resetPasswordExpires: { type: Date, required: false },
   },
   {
     timestamps: true

@@ -120,7 +120,7 @@ export class TokenBudgetService {
           $inc: { tokensUsed, requestCount: 1 },
           $set: { lastUpdated: new Date() }
         },
-        { upsert: true, new: true }
+        { upsert: true, returnDocument: 'after' }
       )
     } catch (error) {
       // Fail silently — recording a missed usage is better than crashing the app

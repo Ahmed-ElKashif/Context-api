@@ -1,6 +1,7 @@
 import mongoose, { Document, Schema } from 'mongoose'
 
-export type DocumentType = 'PDF' | 'Word' | 'Image' | 'TextSnippet'
+// 📊 NEW: Added 'Excel' to the TypeScript type
+export type DocumentType = 'PDF' | 'Word' | 'Image' | 'TextSnippet' | 'Excel'
 export type AIStatus = 'Pending' | 'Processing' | 'Analyzed' | 'Failed'
 export type CognitiveLoad = 'Light' | 'Medium' | 'Heavy'
 
@@ -42,7 +43,8 @@ const documentSchema = new Schema<IDocument>(
     title: { type: String, required: true },
     fileType: {
       type: String,
-      enum: ['PDF', 'Word', 'Image', 'TextSnippet'],
+      // 📊 NEW: Added 'Excel' to the allowed Mongoose enum
+      enum: ['PDF', 'Word', 'Image', 'TextSnippet', 'Excel'],
       required: true
     },
     aiStatus: {

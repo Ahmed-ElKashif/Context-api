@@ -2,6 +2,8 @@ import { Request, Response, NextFunction } from 'express'
 import { ComparisonService } from './comparison.service'
 import { AppError } from '../../core/errors/AppError'
 import { estimateTokens } from '../../core/services/token-budget.service'
+import { ComparisonRecordModel } from './comparison-record.model'
+import { User } from '../users/user.model'
 
 /**
  * @route POST /api/comparison/compare
@@ -51,3 +53,152 @@ export const compareDocuments = async (
     next(error)
   }
 }
+
+/**
+ * @route GET /api/comparison/:docIdA/:docIdB/chat
+ * @description Retrieves the chat history for a specific dual-document comparison session.
+ */
+export const getComparisonChatHistory = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id?.toString() || (req as any).user?.id
+    if (!userId) return next(new AppError('Unauthorized', 401))
+
+    const { docIdA, docIdB } = req.params as { docIdA: string; docIdB: string }
+
+    if (!docIdA || !docIdB) {
+      return next(new AppError('Both document IDs are required in the URL.', 400))
+    }
+
+    const history = await ComparisonService.getComparisonChatHistory(userId, docIdA, docIdB)
+
+    res.status(200).json({
+      success: true,
+      count: history.length,
+      data: history
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+/**
+ * @route POST /api/comparison/:docIdA/:docIdB/chat
+ * @description Queries the dual-document RAG pipeline to answer questions about both files.
+ */
+export const chatWithComparison = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id?.toString() || (req as any).user?.id
+    if (!userId) return next(new AppError('Unauthorized', 401))
+
+    const { docIdA, docIdB } = req.params as { docIdA: string; docIdB: string }
+    const { message } = req.body
+
+    if (!docIdA || !docIdB) {
+      return next(new AppError('Both document IDs are required in the URL.', 400))
+    }
+
+    if (!message) {
+      return next(new AppError('Message is required in the request body.', 400))
+    }
+
+    // Delegate to the dual-document RAG pipeline
+    const aiResponse = await ComparisonService.chatWithComparison(userId, docIdA, docIdB, message)
+
+    // Set AI meta for token-budget and logging middleware
+    res.locals.aiMeta = {
+      model: 'llama3.1:8b-instruct-q4_K_M', // Assuming local offline model for chat
+      tokensUsed: estimateTokens(message + aiResponse) + 200, // Rough conversational estimate
+      operation: 'comparison-chat'
+    }
+
+    res.status(200).json({
+      success: true,
+      data: { role: 'assistant', content: aiResponse }
+    })
+  } catch (error) {
+    next(error)
+  }
+}
+
+// ==========================================
+// 📚 COMPARISON HISTORY
+// ==========================================
+
+export const getComparisonHistory = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id?.toString() || (req as any).user?.id
+    if (!userId) return next(new AppError('Unauthorized', 401))
+
+    const history = await ComparisonRecordModel.find({ user: userId })
+      .select('titleA titleB createdAt')
+      .sort({ createdAt: -1 })
+      .limit(50)
+
+    res.status(200).json({ success: true, count: history.length, data: history })
+  } catch (error) {
+    next(error)
+  }
+}
+
+export const getComparisonRecordById = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id?.toString() || (req as any).user?.id
+    if (!userId) return next(new AppError('Unauthorized', 401))
+
+    const record = await ComparisonRecordModel.findOne({ _id: req.params.id, user: userId })
+    if (!record) return next(new AppError('Comparison record not found', 404))
+
+    res.status(200).json({ success: true, data: record })
+  } catch (error) {
+    next(error)
+  }
+}
+
+export const saveComparisonRecord = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id?.toString() || (req as any).user?.id
+    if (!userId) return next(new AppError('Unauthorized', 401))
+
+    const { docIdA, docIdB, titleA, titleB, comparison } = req.body
+    if (!docIdA || !docIdB || !titleA || !titleB || !comparison) {
+      return next(new AppError('Missing required fields for comparison record', 400))
+    }
+
+    const newRecord = await ComparisonRecordModel.create({
+      user: userId,
+      docIdA,
+      docIdB,
+      titleA,
+      titleB,
+      comparison
+    })
+
+    // Auto-update user's active comparison ID
+    await User.findByIdAndUpdate(userId, { lastActiveComparisonId: newRecord._id })
+
+    res.status(201).json({ success: true, data: newRecord })
+  } catch (error) {
+    next(error)
+  }
+}
+
