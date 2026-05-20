@@ -25,7 +25,8 @@ import {
   getDocumentById,
   serveDocumentFile,
   reanalyzeDocument,
-  getDocumentStatuses
+  getDocumentStatuses,
+  streamDocumentStatuses
 } from './document.controller'
 
 const router = Router()
@@ -60,6 +61,10 @@ router.get('/', getAllDocuments)
 // 🔍 Route: GET /api/documents/search
 // Validates query parameters (q, page, limit)
 router.get('/search', validate(searchDocumentSchema), searchDocuments)
+
+// 📡 Route: GET /api/documents/status/stream
+// SSE stream endpoint to push real-time document aiStatus changes
+router.get('/status/stream', streamDocumentStatuses)
 
 // 📡 Route: GET /api/documents/status
 // Lightweight endpoint for polling document aiStatus

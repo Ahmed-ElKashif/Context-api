@@ -9,6 +9,7 @@ import {
 
 // 2. Import 'protect' instead of 'requireAuth'
 import { protect } from '../../core/middlewares/auth.middleware';
+import { uploadMemory } from '../../core/middlewares/upload.middleware';
 
 const router = Router();
 
@@ -18,7 +19,7 @@ router.use(protect);
 // Existing routes (example structure based on standard REST conventions)
 router.get('/profile', getUserProfile);
 router.patch('/profile', updateUserProfile);
-router.post('/avatar', uploadUserAvatar);
+router.post('/avatar', uploadMemory.single('avatar'), uploadUserAvatar);
 
 // 3. Your NEW Settings Route!
 router.get('/settings', getUserSettings);

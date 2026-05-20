@@ -15,12 +15,14 @@ export const protect = async (
   try {
     let token;
 
-    // 1. Check if the Authorization header exists and starts with "Bearer"
+    // 1. Check if the Authorization header exists or token is in query parameters
     if (
       req.headers.authorization &&
       req.headers.authorization.startsWith('Bearer')
     ) {
       token = req.headers.authorization.split(' ')[1];
+    } else if (req.query && req.query.token) {
+      token = req.query.token as string;
     }
 
     // 2. If no token is found, kick them out

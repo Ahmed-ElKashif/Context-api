@@ -2,6 +2,7 @@ import mongoose from 'mongoose'
 import { DocumentModel } from '../documents/document.model'
 import Folder from '../folders/folder.model'
 import { EmbeddingService } from './vector.service'
+import { aiEvents } from './ai.events'
 import { OrchestratorService } from './orchestrator.service'
 import { PDFParse } from 'pdf-parse'
 import mammoth from 'mammoth'
@@ -123,6 +124,11 @@ export class AIService {
         // Extract the persona (fallback to 'general' just in case)
         const userPersona = (doc.user as any).persona || 'general'
         await DocumentModel.findByIdAndUpdate(id, { aiStatus: 'Processing' })
+        aiEvents.emit('status-update', {
+          userId: (doc.user as any)._id.toString(),
+          documentId: id,
+          aiStatus: 'Processing'
+        })
 
         let rawText = ''
 
@@ -189,6 +195,11 @@ export class AIService {
           throw new Error('No readable text found in document.')
         }
 
+        // 🚀 NEW FIX: Save extracted text early!
+        // This ensures that even if the AI analysis fails (e.g. due to rate limits),
+        // the user can still view the raw text / Excel grid / charts in the frontend.
+        await DocumentModel.findByIdAndUpdate(id, { extractedText: rawText })
+
         // ==========================================
         // 🚀 UNIFIED AI PIPELINE
         // ==========================================
@@ -206,7 +217,7 @@ export class AIService {
         await EmbeddingService.upsert(rawText, id, (doc.user as any)._id.toString())
 
         // 4. Update the main document with success and new metadata
-        await DocumentModel.findByIdAndUpdate(id, {
+        const updatedDoc = await DocumentModel.findByIdAndUpdate(id, {
           extractedText: rawText,
           aiStatus: 'Analyzed',
           summary: metadata.summary,
@@ -218,6 +229,13 @@ export class AIService {
           cognitiveReason: loadMetrics.reason,
 
           contentType: metadata.type
+        }, { new: true })
+
+        aiEvents.emit('status-update', {
+          userId: (doc.user as any)._id.toString(),
+          documentId: id,
+          aiStatus: 'Analyzed',
+          document: updatedDoc
         })
 
         console.log(
@@ -232,6 +250,19 @@ export class AIService {
       } catch (error) {
         console.error(`[AI Worker] Failed to process document ${id}:`, error)
         await DocumentModel.findByIdAndUpdate(id, { aiStatus: 'Failed' })
+
+        try {
+          const fallbackDoc = await DocumentModel.findById(id).select('user')
+          if (fallbackDoc && fallbackDoc.user) {
+            aiEvents.emit('status-update', {
+              userId: fallbackDoc.user.toString(),
+              documentId: id,
+              aiStatus: 'Failed'
+            })
+          }
+        } catch (emitErr) {
+          console.error('[AI Worker] Failed to emit failure status update:', emitErr)
+        }
       }
     }
   }
