@@ -425,7 +425,7 @@ export class AIService {
               isAIGenerated: true
             }
           },
-          { upsert: true, new: true } // Return the newly created/found doc
+          { upsert: true, returnDocument: 'after' } // Return the newly created/found doc
         )) as any
 
         currentParentId = upsertedFolder._id.toString()

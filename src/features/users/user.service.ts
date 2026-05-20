@@ -15,6 +15,8 @@ export class UserService {
       password?: string
       currentPassword?: string
       persona?: 'general' | 'professional' | 'student' | 'developer'
+      lastActiveDocumentId?: string | null
+      lastActiveComparisonId?: string | null
     }
   ): Promise<{ user?: IUser; error?: { message: string; statusCode: number } }> {
     const user = await User.findById(userId)
@@ -36,6 +38,14 @@ export class UserService {
 
     if (updateData.fullName) user.fullName = updateData.fullName
     if (updateData.persona) user.persona = updateData.persona
+
+    // Persist the new cross-device state fields
+    if (updateData.lastActiveDocumentId !== undefined) {
+      (user as any).lastActiveDocumentId = updateData.lastActiveDocumentId
+    }
+    if (updateData.lastActiveComparisonId !== undefined) {
+      (user as any).lastActiveComparisonId = updateData.lastActiveComparisonId
+    }
 
     if (updateData.password) {
       if (!updateData.currentPassword) {

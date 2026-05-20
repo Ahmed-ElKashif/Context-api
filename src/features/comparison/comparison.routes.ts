@@ -2,7 +2,10 @@ import { Router } from 'express'
 import {
   compareDocuments,
   getComparisonChatHistory,
-  chatWithComparison
+  chatWithComparison,
+  getComparisonHistory,
+  getComparisonRecordById,
+  saveComparisonRecord
 } from './comparison.controller'
 import { protect } from '../../core/middlewares/auth.middleware'
 import { validate } from '../../core/middlewares/validate.middleware'
@@ -23,6 +26,16 @@ router.post(
   validate(compareDocumentsSchema),
   compareDocuments
 )
+
+// ==========================================
+// 📚 HISTORY ROUTES
+// ==========================================
+router.route('/history')
+  .get(getComparisonHistory)
+  .post(saveComparisonRecord)
+
+router.get('/history/:id', getComparisonRecordById)
+
 
 // ==========================================
 // 💬 DUAL-DOCUMENT RAG CHAT ROUTES

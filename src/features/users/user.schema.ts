@@ -24,7 +24,10 @@ export const updateProfileSchema = z.object({
 
     currentPassword: z.string().min(1, 'Current master key is required').optional(),
 
-    persona: z.enum(['general', 'professional', 'student', 'developer']).optional()
+    persona: z.enum(['general', 'professional', 'student', 'developer']).optional(),
+    
+    lastActiveDocumentId: z.string().optional().nullable(),
+    lastActiveComparisonId: z.string().optional().nullable()
   }).superRefine((data, ctx) => {
     if (data.password && !data.currentPassword) {
       ctx.addIssue({
