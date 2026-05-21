@@ -4,7 +4,6 @@ import { ChatOpenAI } from '@langchain/openai'
 import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { createReactAgent } from '@langchain/langgraph/prebuilt'
 import { HumanMessage, SystemMessage, isAIMessage } from '@langchain/core/messages'
-import { MemorySaver } from '@langchain/langgraph'
 
 /**
  * @description Defines the output structure expected from the Orchestrator Agent.
@@ -40,14 +39,6 @@ export class OrchestratorService {
   static init(model: BaseChatModel): void {
     this._model = model
   }
-
-  // ==========================================
-  // STATE MANAGEMENT
-  // ==========================================
-
-  // Initialize the LangGraph Checkpointer
-  // This persists the agent's memory state per-document upload
-  private static checkpointer = new MemorySaver()
 
   // ==========================================
   // TOOL DEFINITIONS
@@ -148,26 +139,22 @@ export class OrchestratorService {
       Do not skip any tools. Do not ask follow-up questions.
     `)
 
-    // createReactAgent uses the injected this._model — not a locally constructed one
+    // createReactAgent uses the injected this._model — not a locally constructed one.
+    // No checkpointSaver is provided: this agent does a single-shot 3-tool call and
+    // has no need to persist state across invocations. Using MemorySaver with a fixed
+    // thread_id caused message history to accumulate on retries, multiplying token usage.
     const agent = createReactAgent({
       llm: this._model,
-      tools: tools,
-      checkpointSaver: this.checkpointer
+      tools: tools
     })
 
     let response
 
     // Strict Try/Catch on Agent Execution
     try {
-      response = await agent.invoke(
-        {
-          messages: [
-            systemPrompt,
-            new HumanMessage(`Analyze the following document text:\n\n${textPreview}`)
-          ]
-        },
-        { configurable: { thread_id: documentId } }
-      )
+      response = await agent.invoke({
+        messages: [systemPrompt, new HumanMessage(`Analyze the following document text:\n\n${textPreview}`)]
+      })
 
       // Log Token Usage
       const aiMessages = response.messages.filter(isAIMessage)

@@ -2,7 +2,7 @@ import mongoose from 'mongoose'
 import Folder, { IFolder } from './folder.model'
 import { DocumentModel, IDocument } from '../documents/document.model'
 import { configureCloudinary } from '../../config/cloudinary'
-import { EmbeddingService } from '../ai/vector.service'
+import { EmbeddingService } from '../ai/search/vector.service'
 import archiver from 'archiver'
 import axios from 'axios'
 

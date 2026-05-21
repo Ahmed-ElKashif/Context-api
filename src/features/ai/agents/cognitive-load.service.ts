@@ -2,7 +2,7 @@ import { ChatOpenAI } from '@langchain/openai'
 import { SystemMessage, HumanMessage } from '@langchain/core/messages'
 import { Runnable } from '@langchain/core/runnables'
 import { z } from 'zod'
-import { DocumentModel } from '../documents/document.model'
+import { DocumentModel } from '../../documents/document.model'
 
 // 1. Define the Structured Output Schema
 const CognitiveLoadSchema = z.object({

@@ -1,11 +1,10 @@
 import { Router } from 'express'
 import { protect } from '../../core/middlewares/auth.middleware'
 import { validate } from '../../core/middlewares/validate.middleware'
-import { uploadMemory } from '../../core/middlewares/upload.middleware'
 import { checkTokenBudget } from '../../core/middlewares/token-budget.middleware'
-import { uploadData } from './upload.controller'
-import { getDocumentChatHistory, chatWithDocument } from './document.controller'
-import { SuggestedFocusService } from './suggested-focus.service'
+import { uploadData } from './upload/upload.controller'
+import { getDocumentChatHistory, chatWithDocument, reanalyzeDocument } from './chat/document-chat.controller'
+import { getDocumentStatuses, streamDocumentStatuses } from './status/document-status.controller'
 
 // 🛠️ NEW: Import your Zod Schemas
 import {
@@ -24,9 +23,7 @@ import {
   bulkDeleteDocuments,
   getDocumentById,
   serveDocumentFile,
-  reanalyzeDocument,
-  getDocumentStatuses,
-  streamDocumentStatuses
+  getSuggestedFocus
 } from './document.controller'
 
 const router = Router()
@@ -40,20 +37,12 @@ router.use(protect)
 
 // Route: POST /api/documents/upload
 // Upgraded to handle batch uploads! Expects an array of files under the key 'files' (max 5)
-router.post('/upload', checkTokenBudget, uploadMemory.array('files', 5), uploadData)
+router.post('/upload', checkTokenBudget, uploadData)
 
 // Route: GET /api/documents/suggested-focus
 // Returns the top-2 documents ranked by cognitiveLoad + recency + isUnread.
 // Must be declared BEFORE /:id so Express doesn't treat 'suggested-focus' as an ID.
-router.get('/suggested-focus', async (req, res, next) => {
-  try {
-    const userId = req.user!._id.toString()
-    const docs = await SuggestedFocusService.getTopFocusDocuments(userId)
-    res.status(200).json({ success: true, count: docs.length, data: docs })
-  } catch (error) {
-    next(error)
-  }
-})
+router.get('/suggested-focus', getSuggestedFocus)
 
 // Route: GET /api/documents
 router.get('/', getAllDocuments)

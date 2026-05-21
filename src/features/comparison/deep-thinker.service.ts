@@ -1,9 +1,11 @@
 import { ChatGroq } from '@langchain/groq'
+import { ChatOpenAI } from '@langchain/openai'
 import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { SystemMessage, HumanMessage } from '@langchain/core/messages'
 import { JsonOutputParser } from '@langchain/core/output_parsers'
 import { z } from 'zod'
 import { DocumentModel } from '../documents/document.model'
+import { DocumentPreviewService, SupportedFileType } from '../ai/pipeline/document-preview.service'
 
 // 1. Define the Comparison Output Schema
 const ComparisonSchema = z.object({
@@ -43,6 +45,17 @@ const defaultFallbackLlm = new ChatGroq({
   temperature: 0.1
 })
 
+// LAST RESORT: GPT-4o-mini — activated only if both Groq models fail
+const defaultLastResortLlm = new ChatOpenAI({
+  model: 'gpt-4o-mini',
+  temperature: 0.3
+})
+
+// Per-document character budget for comparison.
+// Two documents share the same context window, so each gets half the orchestrator's
+// 80k default (40k each = 80k combined ≈ 20k tokens — safe across all three models).
+const MAX_COMPARISON_CHARS_PER_DOC = 40_000
+
 export class DeepThinkerService {
   // ==========================================
   // INJECTED MODELS (injectable for unit tests)
@@ -50,16 +63,19 @@ export class DeepThinkerService {
 
   private static _primary: BaseChatModel = defaultPrimaryLlm
   private static _fallback: BaseChatModel = defaultFallbackLlm
+  private static _lastResort: BaseChatModel = defaultLastResortLlm
 
   /**
    * Injection point — called by ModelRegistry at startup.
-   * In unit tests, inject mocks:
+   * The third `lastResort` parameter is optional so existing unit tests
+   * that only inject two mocks continue to work unchanged.
    * @example
-   * DeepThinkerService.init(mockPrimary, mockFallback)
+   * DeepThinkerService.init(mockPrimary, mockFallback, mockLastResort)
    */
-  static init(primary: BaseChatModel, fallback: BaseChatModel): void {
+  static init(primary: BaseChatModel, fallback: BaseChatModel, lastResort?: BaseChatModel): void {
     this._primary = primary
     this._fallback = fallback
+    if (lastResort) this._lastResort = lastResort
   }
 
   static async compareDocuments(
@@ -74,14 +90,34 @@ export class DeepThinkerService {
 
     if (!docA || !docB) throw new Error('Documents not found or unauthorized.')
 
+    // Build a token-safe preview of each document.
+    // Each document gets MAX_COMPARISON_CHARS_PER_DOC (40k chars) so that
+    // both together stay well within the 128k context limit of all three models.
+    // The fileType drives the sampling strategy (windowed text vs. schema-first Excel).
+    const previewA = DocumentPreviewService.buildPreview(
+      docA.extractedText || '',
+      docA.fileType as SupportedFileType,
+      MAX_COMPARISON_CHARS_PER_DOC
+    )
+    const previewB = DocumentPreviewService.buildPreview(
+      docB.extractedText || '',
+      docB.fileType as SupportedFileType,
+      MAX_COMPARISON_CHARS_PER_DOC
+    )
+
+    console.log(
+      `[DeepThinker] Input sizes — A: ${previewA.length.toLocaleString()} chars, B: ${previewB.length.toLocaleString()} chars (combined: ${(previewA.length + previewB.length).toLocaleString()})`
+    )
+
     const parser = new JsonOutputParser<ComparisonResult>()
     const humanMessage = new HumanMessage(`
       DOCUMENT A:
-      ${docA.extractedText}
+      ${previewA}
 
       DOCUMENT B:
-      ${docB.extractedText}
+      ${previewB}
     `)
+
 
     // ==========================================
     // ATTEMPT 1: The 70B Professor
@@ -148,12 +184,44 @@ export class DeepThinkerService {
 
         return ComparisonSchema.parse(fallbackResult)
       } catch (fallbackError) {
+        console.warn(`[DeepThinker] ⚠️ 8B model also failed. Triggering GPT-4o-mini last resort...`)
         console.error(
-          `[DeepThinker] 🚨 FATAL: Both 70B and 8B models failed to parse the documents.`
+          `[DeepThinker Error Details]:`,
+          fallbackError instanceof Error ? fallbackError.message : 'Unknown Error'
         )
-        throw new Error(
-          'Our AI engines are currently experiencing high traffic. Please try comparing these documents again in a moment.'
-        )
+
+        // ==========================================
+        // ATTEMPT 3: GPT-4o-mini Last Resort
+        // ==========================================
+        try {
+          console.log(`[DeepThinker] Attempt 3: Last resort — GPT-4o-mini...`)
+
+          const lastResortSystemMessage = new SystemMessage(`
+            You are a precise document analyst.
+            Return ONLY a raw JSON object with no extra text, no markdown, no code blocks.
+            Use this exact structure:
+            {
+              "synthesis": "string (2-3 sentence summary of how the documents compare)",
+              "similarityPercentage": number (0 to 100),
+              "similarities": ["string"],
+              "differences": ["string"],
+              "uniqueToA": ["string"],
+              "uniqueToB": ["string"]
+            }
+          `)
+
+          const lastResortChain = this._lastResort.pipe(parser)
+          const lastResortResult = await lastResortChain.invoke([lastResortSystemMessage, humanMessage])
+
+          return ComparisonSchema.parse(lastResortResult)
+        } catch (lastResortError) {
+          console.error(
+            `[DeepThinker] 🚨 FATAL: All three models (70B, 8B, GPT-4o-mini) failed.`
+          )
+          throw new Error(
+            'Our AI engines are currently experiencing high traffic. Please try comparing these documents again in a moment.'
+          )
+        }
       }
     }
   }

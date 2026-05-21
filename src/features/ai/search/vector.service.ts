@@ -2,7 +2,7 @@ import mongoose from 'mongoose'
 import { OpenAIEmbeddings } from '@langchain/openai'
 import { MongoDBAtlasVectorSearch } from '@langchain/mongodb'
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters'
-import { ChunkModel } from '../documents/chunk.model'
+import { ChunkModel } from '../../documents/chunk.model'
 
 // ─── Module-level default (production) ──────────────────────────────────────
 const defaultEmbeddings = new OpenAIEmbeddings({

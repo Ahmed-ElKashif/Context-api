@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import { FolderService } from './folder.service'
 import { AppError } from '../../core/errors/AppError'
-import { FolderProposerService } from '../ai/folder-proposer.service'
+import { FolderProposerService } from '../ai/organizer/folder-proposer.service'
 import { estimateTokens } from '../../core/services/token-budget.service'
 import archiver from 'archiver' // 📦 NEW: Import archiver
 

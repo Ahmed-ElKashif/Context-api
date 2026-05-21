@@ -1,9 +1,10 @@
 import { DocumentService } from '../document.service'
+import { DocumentChatService } from '../chat/document-chat.service'
 import { DocumentModel } from '../document.model'
 import Folder from '../../folders/folder.model'
 import { configureCloudinary } from '../../../config/cloudinary'
-import { EmbeddingService } from '../../ai/vector.service'
-import { ChatMessageModel } from '../../ai/chat.model'
+import { EmbeddingService } from '../../ai/search/vector.service'
+import { ChatMessageModel } from '../../ai/models/chat.model'
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -50,7 +51,7 @@ const mockChatFind = jest.fn()
 
 beforeEach(() => {
   jest.clearAllMocks()
-  DocumentService.init(mockChatModel as any)
+  DocumentChatService.init(mockChatModel as any)
 
   // Reset chain
   mockFind.mockReturnValue({ sort: mockSort })
@@ -175,7 +176,7 @@ describe('DocumentService', () => {
 
       const validDocId = '5f8d04f3b54764421b7156d1'
       const validUserId = '5f8d04f3b54764421b7156d2'
-      const result = await DocumentService.chatWithDocument(validDocId, validUserId, 'What is this?')
+      const result = await DocumentChatService.chatWithDocument(validDocId, validUserId, 'What is this?')
 
       expect(result).toBe('AI Answer')
       expect(mockRetrieverInvoke).toHaveBeenCalledWith('What is this?')
@@ -191,7 +192,7 @@ describe('DocumentService', () => {
 
       const validDocId = '5f8d04f3b54764421b7156d1'
       const validUserId = '5f8d04f3b54764421b7156d2'
-      const result = await DocumentService.chatWithDocument(validDocId, validUserId, 'Hello')
+      const result = await DocumentChatService.chatWithDocument(validDocId, validUserId, 'Hello')
 
       expect(result).toBe(
         "I couldn't find any relevant information in this document to answer your question."

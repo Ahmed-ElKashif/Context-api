@@ -25,7 +25,7 @@ jest.mock('@langchain/core/prompts', () => ({
 }))
 
 // ─── Import AFTER mock declaration ───────────────────────────────────────────
-import { SynthesizerAgent } from '../synthesizer.service'
+import { SynthesizerAgent } from '../agents/synthesizer.service'
 
 const mockModel = { invoke: jest.fn(), pipe: jest.fn() }
 
