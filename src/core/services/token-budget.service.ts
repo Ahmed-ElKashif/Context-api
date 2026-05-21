@@ -1,4 +1,4 @@
-import { TokenBudgetModel } from '../../features/ai/token-budget.model'
+import { TokenBudgetModel } from '../../features/ai/models/token-budget.model'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 

@@ -17,7 +17,7 @@ jest.mock('../../documents/document.model', () => ({
   DocumentModel: { find: mockFind }
 }))
 
-import { FolderProposerService } from '../folder-proposer.service'
+import { FolderProposerService } from '../organizer/folder-proposer.service'
 
 // ─── Mock model with withStructuredOutput ─────────────────────────────────────
 const mockStructuredInvoke = jest.fn()

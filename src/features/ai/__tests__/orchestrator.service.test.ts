@@ -19,7 +19,7 @@ jest.mock('@langchain/langgraph/prebuilt', () => ({
   }))
 }))
 
-import { OrchestratorService } from '../orchestrator.service'
+import { OrchestratorService } from '../agents/orchestrator.service'
 
 // ─── Mock model (injected — not used directly, just needs to exist) ───────────
 const mockModel = { invoke: jest.fn(), bindTools: jest.fn() }

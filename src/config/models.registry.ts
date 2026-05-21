@@ -1,14 +1,15 @@
 import { ChatOpenAI, OpenAIEmbeddings } from '@langchain/openai'
 import { ChatGroq } from '@langchain/groq'
-import { OrchestratorService } from '../features/ai/orchestrator.service'
-import { SynthesizerAgent } from '../features/ai/synthesizer.service'
-import { CognitiveLoadService } from '../features/ai/cognitive-load.service'
-import { VisualCortexService } from '../features/ai/visual-cortex.service'
+import { OrchestratorService } from '../features/ai/agents/orchestrator.service'
+import { SynthesizerAgent } from '../features/ai/agents/synthesizer.service'
+import { CognitiveLoadService } from '../features/ai/agents/cognitive-load.service'
+import { VisualCortexService } from '../features/ai/agents/visual-cortex.service'
 import { DeepThinkerService } from '../features/comparison/deep-thinker.service'
-import { EmbeddingService } from '../features/ai/vector.service'
+import { EmbeddingService } from '../features/ai/search/vector.service'
 import { AIService } from '../features/ai/ai.service'
-import { FolderProposerService } from '../features/ai/folder-proposer.service'
-import { DocumentService } from '../features/documents/document.service'
+import { FolderOrganizerService } from '../features/ai/organizer/folder-organizer.service'
+import { FolderProposerService } from '../features/ai/organizer/folder-proposer.service'
+import { DocumentChatService } from '../features/documents/chat/document-chat.service'
 import { ComparisonService } from '../features/comparison/comparison.service'
 
 /**
@@ -28,7 +29,7 @@ export class ModelRegistry {
     OrchestratorService.init(
       new ChatOpenAI({
         model: 'gpt-4o-mini',
-        temperature: 0.2,
+        temperature: 0.3,
         maxTokens: 1000
       })
     )
@@ -37,7 +38,8 @@ export class ModelRegistry {
     SynthesizerAgent.init(
       new ChatOpenAI({
         model: 'gpt-4o-mini',
-        temperature: 0.2
+        temperature: 0.3,
+        maxTokens: 400  // Matches the prompt's 200-250 word constraint
       })
     )
 
@@ -46,7 +48,7 @@ export class ModelRegistry {
       new ChatOpenAI({
         apiKey: process.env.OPENAI_API_KEY,
         model: 'gpt-4o-mini',
-        temperature: 0.1
+        temperature: 0.3
       })
     )
 
@@ -71,19 +73,24 @@ export class ModelRegistry {
       })
     )
 
-    // ─── Deep Thinker (Groq 70B primary, Groq 8B fallback) ─────────────────────
+    // ─── Deep Thinker (Groq 70B → Groq 8B → GPT-4o-mini) ──────────────────────
     DeepThinkerService.init(
       // PRIMARY: 70B "Professor"
       new ChatGroq({
         apiKey: process.env.GROQ_API_KEY,
         model: process.env.GROQ_VERSATILE_COMPARISON_MODEL || 'llama-3.3-70b-versatile',
-        temperature: 0.1
+        temperature: 0.3
       }),
       // FALLBACK: 8B "Fast Student"
       new ChatGroq({
         apiKey: process.env.GROQ_API_KEY,
         model: process.env.GROQ_INSTANT_COMPARISON_MODEL || 'llama-3.1-8b-instant',
-        temperature: 0.1
+        temperature: 0.3
+      }),
+      // LAST RESORT: GPT-4o-mini — activated only if both Groq models fail
+      new ChatOpenAI({
+        model: 'gpt-4o-mini',
+        temperature: 0.3
       })
     )
 
@@ -95,11 +102,11 @@ export class ModelRegistry {
       })
     )
 
-    // ─── AI Service / Folder Organizer (GPT-4o-mini — semantic folder proposals) ─
-    AIService.init(
+    // ─── Folder Organizer (GPT-4o-mini — semantic folder proposals via AI) ────────
+    FolderOrganizerService.init(
       new ChatOpenAI({
         model: 'gpt-4o-mini',
-        temperature: 0.1
+        temperature: 0.3
       })
     )
 
@@ -107,15 +114,15 @@ export class ModelRegistry {
     FolderProposerService.init(
       new ChatOpenAI({
         model: 'gpt-4o-mini',
-        temperature: 0.1
+        temperature: 0.3
       })
     )
 
-    // ─── DocumentService (GPT-4o-mini — RAG chat with individual documents) ────
-    DocumentService.init(
+    // ─── DocumentChatService (GPT-4o-mini — RAG chat with individual documents) ────
+    DocumentChatService.init(
       new ChatOpenAI({
         model: 'gpt-4o-mini',
-        temperature: 0.5 // Slightly higher temp for conversational RAG responses
+        temperature: 0.4 // Slightly higher temp for conversational RAG responses
       })
     )
 
@@ -123,7 +130,7 @@ export class ModelRegistry {
     ComparisonService.init(
       new ChatOpenAI({
         model: 'gpt-4o-mini',
-        temperature: 0.5 // Higher temp for collaborative thought partner
+        temperature: 0.3 // Higher temp for collaborative thought partner
       })
     )
 

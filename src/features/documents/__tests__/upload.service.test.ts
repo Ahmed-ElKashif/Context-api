@@ -52,7 +52,7 @@ jest.mock('../../ai/ai.service', () => ({
 
 // ─── Imports (after mocks) ────────────────────────────────────────────────────
 
-import { UploadService } from '../upload.service'
+import { UploadService } from '../upload/upload.service'
 import { DocumentModel } from '../document.model'
 import Folder from '../../folders/folder.model'
 import { AIService } from '../../ai/ai.service'

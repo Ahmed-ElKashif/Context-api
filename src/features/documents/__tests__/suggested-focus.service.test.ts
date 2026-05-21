@@ -1,4 +1,4 @@
-import { SuggestedFocusService } from '../suggested-focus.service'
+import { SuggestedFocusService } from '../analysis/suggested-focus.service'
 import { DocumentModel } from '../document.model'
 
 jest.mock('../document.model', () => ({

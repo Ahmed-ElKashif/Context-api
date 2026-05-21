@@ -1,6 +1,6 @@
 import { User } from '../users/user.model'
 import { analyticsService } from '../analytics/analytics.service'
-import { TokenBudgetModel } from '../ai/token-budget.model'
+import { TokenBudgetModel } from '../ai/models/token-budget.model'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

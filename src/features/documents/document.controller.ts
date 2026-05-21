@@ -1,9 +1,22 @@
 import { Request, Response, NextFunction } from 'express'
 import { AppError } from '../../core/errors/AppError'
 import { DocumentService } from './document.service'
-import { DocumentModel } from './document.model'
-import { aiEvents } from '../ai/ai.events'
-import { estimateTokens } from '../../core/services/token-budget.service'
+import { SuggestedFocusService } from './analysis/suggested-focus.service'
+
+// @route   GET /api/documents/suggested-focus
+export const getSuggestedFocus = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user!._id.toString()
+    const docs = await SuggestedFocusService.getTopFocusDocuments(userId)
+    res.status(200).json({ success: true, count: docs.length, data: docs })
+  } catch (error) {
+    next(error)
+  }
+}
 
 // @route   GET /api/documents
 export const getAllDocuments = async (
@@ -267,166 +280,4 @@ export const serveDocumentFile = async (
   }
 }
 
-// @route   GET /api/documents/status
-// Lightweight endpoint to poll document aiStatus
-export const getDocumentStatuses = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const userId = req.user?._id?.toString()
-    if (!userId) return next(new AppError('Unauthorized', 401))
-
-    const idsParam = req.query.ids as string
-    if (!idsParam) {
-      res.status(200).json({ success: true, data: [] })
-      return
-    }
-
-    const ids = idsParam.split(',')
-    const documents = await DocumentModel.find({ _id: { $in: ids }, user: userId }).select('_id title aiStatus tags cognitiveLoad summary')
-
-    res.status(200).json({ success: true, data: documents })
-  } catch (error) {
-    next(error)
-  }
-}
-
-// @route   GET /api/documents/status/stream
-// SSE stream endpoint to notify client about real-time document aiStatus changes
-export const streamDocumentStatuses = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void> => {
-  try {
-    const userId = req.user?._id?.toString()
-    if (!userId) {
-      res.status(401).json({ success: false, message: 'Unauthorized' })
-      return
-    }
-
-    // Set headers for Server-Sent Events (SSE)
-    res.setHeader('Content-Type', 'text/event-stream')
-    res.setHeader('Cache-Control', 'no-cache')
-    res.setHeader('Connection', 'keep-alive')
-    res.setHeader('X-Accel-Buffering', 'no') // Disable proxy buffering (e.g. Nginx)
-
-    // Send initial handshake event
-    res.write('retry: 10000\n') // Ask client to retry connection every 10s if closed
-    res.write(`data: ${JSON.stringify({ connected: true })}\n\n`)
-
-    const onStatusUpdate = (event: { userId: string; documentId: string; aiStatus: string; document?: any }) => {
-      if (event.userId === userId) {
-        res.write(`data: ${JSON.stringify(event)}\n\n`)
-      }
-    }
-
-    aiEvents.on('status-update', onStatusUpdate)
-
-    // Cleanup when browser closes the connection
-    req.on('close', () => {
-      aiEvents.off('status-update', onStatusUpdate)
-      res.end()
-    })
-  } catch (error) {
-    next(error)
-  }
-}
-
-export const getDocumentChatHistory = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const id = req.params.id as string
-    const userId = (req as any).user._id.toString()
-
-    // Security: Ensure doc belongs to user
-    const docExists = await DocumentModel.exists({ _id: id, user: userId })
-    if (!docExists) {
-      res.status(404).json({ success: false, message: 'Document not found' })
-      return
-    }
-
-    const history = await DocumentService.getDocumentChatHistory(id, userId)
-
-    res.status(200).json({ success: true, count: history.length, data: history })
-  } catch (error: any) {
-    console.error('[Document Controller] Error fetching history:', error)
-    res.status(500).json({ success: false, message: error.message })
-  }
-}
-
-export const chatWithDocument = async (req: Request, res: Response): Promise<void> => {
-  try {
-    const id = req.params.id as string
-    const { message } = req.body
-    const userId = (req as any).user._id.toString()
-
-    if (!message) {
-      res.status(400).json({ success: false, message: 'Message is required' })
-      return
-    }
-
-    // Security: Ensure doc belongs to user
-    const docExists = await DocumentModel.exists({ _id: id, user: userId })
-    if (!docExists) {
-      res.status(404).json({ success: false, message: 'Document not found' })
-      return
-    }
-
-    const aiResponse = await DocumentService.chatWithDocument(id, userId, message)
-
-    // Set AI meta for token-budget and logging middleware
-    res.locals.aiMeta = {
-      model: 'gpt-4o-mini',
-      tokensUsed: estimateTokens(message + aiResponse) + 1200, // prompt overhead + context window estimation
-      operation: 'document-chat'
-    }
-
-    res.status(200).json({
-      success: true,
-      data: { role: 'ai', content: aiResponse }
-    })
-  } catch (error: any) {
-    console.error('[Document Controller] Error in RAG chat:', error)
-    res.status(500).json({ success: false, message: error.message })
-  }
-}
-
-// @route   POST /api/documents/:id/reanalyze
-export const reanalyzeDocument = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-  try {
-    const id = req.params.id as string
-    const userId = (req as any).user._id.toString()
-
-    // Ensure document exists and belongs to user
-    const document = await DocumentModel.findOne({ _id: id, user: userId })
-    if (!document) {
-      res.status(404).json({ success: false, message: 'Document not found' })
-      return
-    }
-
-    // Set to pending so the UI updates
-    document.aiStatus = 'Pending'
-    await document.save()
-
-    // Import AIService dynamically to avoid circular dependencies if any,
-    // or just require it (we will assume it can be required)
-    const { AIService } = require('../ai/ai.service')
-    
-    // Kick off background job
-    AIService.processPendingDocuments([id]).catch((err: any) => {
-      console.error(`[Reanalyze API] Failed to trigger background worker for ${id}:`, err)
-    })
-
-    res.status(200).json({
-      success: true,
-      message: 'Document re-analysis triggered successfully',
-      data: document
-    })
-  } catch (error: any) {
-    console.error('[Document Controller] Error reanalyzing document:', error)
-    next(error)
-  }
-}
 

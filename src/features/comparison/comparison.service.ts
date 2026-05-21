@@ -1,7 +1,7 @@
 import { DocumentModel } from '../documents/document.model'
 import { DeepThinkerService } from './deep-thinker.service'
 import { ComparisonMessageModel } from './comparison-chat.model'
-import { EmbeddingService } from '../ai/vector.service'
+import { EmbeddingService } from '../ai/search/vector.service'
 import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages'
 import mongoose from 'mongoose'
@@ -43,10 +43,10 @@ export class ComparisonService {
       }
     }
 
-    const text1 = doc1.extractedText || doc1.summary
-    const text2 = doc2.extractedText || doc2.summary
-
-    if (!text1 || !text2) {
+    // Guard: both documents must have some content to compare against.
+    // (The actual text sent to the LLM is built inside DeepThinkerService
+    //  using DocumentPreviewService — see deep-thinker.service.ts)
+    if (!(doc1.extractedText || doc1.summary) || !(doc2.extractedText || doc2.summary)) {
       return {
         error: 'Both documents must have extracted text or a summary to perform a comparison.',
         statusCode: 400

@@ -1,8 +1,8 @@
-import { DocumentModel, DocumentType } from './document.model'
-import Folder, { IFolder } from '../folders/folder.model'
-import { configureCloudinary } from '../../config/cloudinary'
+import { DocumentModel, DocumentType } from '../document.model'
+import Folder, { IFolder } from '../../folders/folder.model'
+import { configureCloudinary } from '../../../config/cloudinary'
 import streamifier from 'streamifier'
-import { AIService } from '../ai/ai.service'
+import { AIService } from '../../ai/ai.service'
 import crypto from 'crypto'
 
 const cloudinary = configureCloudinary()
@@ -25,11 +25,16 @@ const getFileTypeFromMime = (mimeType: string): DocumentType => {
 
 const getCloudinaryFolder = (docType: DocumentType): string => {
   switch (docType) {
-    case 'PDF':    return 'documents/pdf'
-    case 'Image':  return 'documents/images'
-    case 'Word':   return 'documents/word'
-    case 'Excel':  return 'documents/excel'
-    default:       return 'documents/other'
+    case 'PDF':
+      return 'documents/pdf'
+    case 'Image':
+      return 'documents/images'
+    case 'Word':
+      return 'documents/word'
+    case 'Excel':
+      return 'documents/excel'
+    default:
+      return 'documents/other'
   }
 }
 
@@ -177,8 +182,8 @@ export class UploadService {
     tags: string | undefined,
     clientPaths: string[]
   ): Promise<PhysicalUploadResult> {
-    const folderCache   = new Map<string, any>()
-    const dbTitleCache  = new Map<string, Set<string>>()
+    const folderCache = new Map<string, any>()
+    const dbTitleCache = new Map<string, Set<string>>()
     const batchTitleCache = new Map<string, Set<string>>()
     const docsToInsert: any[] = []
     const skippedFiles: string[] = []
@@ -203,8 +208,8 @@ export class UploadService {
       if (fileSizeMB < 2) load = 'Light'
       if (fileSizeMB > 5) load = 'Heavy'
 
-      const inferredType  = getFileTypeFromMime(file.mimetype)
-      const originalPath  = clientPaths[i] || `/${originalName}`
+      const inferredType = getFileTypeFromMime(file.mimetype)
+      const originalPath = clientPaths[i] || `/${originalName}`
 
       // ── Upload to Cloudinary ──────────────────────────────────────────────
       const cloudinaryFolder = getCloudinaryFolder(inferredType)
@@ -261,10 +266,10 @@ export class UploadService {
       }
 
       // ── Windows-style duplicate title resolution ──────────────────────────
-      const folderKey  = currentParentId ? String(currentParentId) : 'root'
-      const dbTitles   = await loadFolderTitles(userId, currentParentId, dbTitleCache)
+      const folderKey = currentParentId ? String(currentParentId) : 'root'
+      const dbTitles = await loadFolderTitles(userId, currentParentId, dbTitleCache)
       const batchTitles = batchTitleCache.get(folderKey) ?? new Set<string>()
-      const allTaken   = new Set<string>([...dbTitles, ...batchTitles])
+      const allTaken = new Set<string>([...dbTitles, ...batchTitles])
 
       const uniqueTitle = resolveUniqueTitle(originalName, allTaken)
       batchTitles.add(uniqueTitle.toLowerCase())
