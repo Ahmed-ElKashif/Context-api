@@ -68,13 +68,31 @@ export class FolderService {
     totalDocuments: number
   }> {
     let docQuery: any = { user: userId }
-    if (!search && !tags) docQuery.folder = targetFolderId
-    if (search)
-      docQuery.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { tags: { $regex: search, $options: 'i' } }
-      ]
-    if (tags) docQuery.tags = tags
+    if (search || tags) {
+      if (targetFolderId) {
+        const currentFolderData = await Folder.findById(targetFolderId)
+        if (currentFolderData) {
+          const escapedPath = currentFolderData.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          const subfolders = await Folder.find({
+            user: userId,
+            path: { $regex: `^${escapedPath}(/|$)` }
+          })
+          docQuery.folder = { $in: subfolders.map((f) => f._id) }
+        } else {
+          docQuery.folder = targetFolderId
+        }
+      }
+      
+      if (search) {
+        docQuery.$or = [
+          { title: { $regex: search, $options: 'i' } },
+          { tags: { $regex: search, $options: 'i' } }
+        ]
+      }
+      if (tags) docQuery.tags = tags
+    } else {
+      docQuery.folder = targetFolderId
+    }
 
     const folderQuery = { user: userId, parentFolder: targetFolderId }
     const folderCount = !search && !tags ? await Folder.countDocuments(folderQuery) : 0
