@@ -45,8 +45,21 @@ export const checkTokenBudget = async (
 
   const budget = await TokenBudgetService.checkBudget(userId)
 
-    if (!budget.allowed) {
+  if (!budget.allowed) {
     const resetAt = getResetTime()
+
+    if (!budget.monthlyAllowed) {
+      res.status(429).json({
+        success: false,
+        error: 'Monthly AI token budget exceeded.',
+        message: `You have used all ${budget.monthlyLimit.toLocaleString()} tokens for this month. AI features will be temporarily paused.`,
+        tokensUsed: budget.tokensUsed,
+        limit: budget.limit,
+        resetAt: resetAt.toISOString()
+      })
+      return
+    }
+
     const retryAfterSeconds = Math.ceil((resetAt.getTime() - Date.now()) / 1000)
     
     const hoursRemaining = Math.floor(retryAfterSeconds / 3600)
