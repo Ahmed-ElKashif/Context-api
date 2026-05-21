@@ -64,10 +64,7 @@ export class AIService {
    * Applies the AI-proposed folder structure to the database.
    * @see FolderOrganizerService.applyPhysicalFolders
    */
-  static applyPhysicalFolders(
-    userId: string,
-    updates: { documentId: string; newPath: string }[]
-  ) {
+  static applyPhysicalFolders(userId: string, updates: { documentId: string; newPath: string }[]) {
     return FolderOrganizerService.applyPhysicalFolders(userId, updates)
   }
 
