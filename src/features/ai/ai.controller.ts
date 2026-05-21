@@ -57,7 +57,8 @@ export const generateSemanticStructure = async (
 
       const folderDocs = await DocumentModel.find({ 
         user: userId, 
-        folder: { $in: Array.from(allFolderIds) } 
+        folder: { $in: Array.from(allFolderIds) },
+        isOrganized: { $ne: true } 
       }).select('_id title')
 
       const existingIds = new Set(documents.map((d: any) => d._id || d.id))

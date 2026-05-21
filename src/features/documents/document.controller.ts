@@ -241,6 +241,9 @@ export const getDocumentById = async (
       return next(new AppError('Document not found or unauthorized', 404))
     }
 
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate')
+    res.setHeader('Pragma', 'no-cache')
+    res.setHeader('Expires', '0')
     res.status(200).json({ success: true, data: document })
   } catch (error) {
     next(error)

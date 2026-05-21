@@ -4,6 +4,7 @@ import { DocumentModel, IDocument } from '../documents/document.model'
 import { configureCloudinary } from '../../config/cloudinary'
 import { EmbeddingService } from '../ai/search/vector.service'
 import archiver from 'archiver'
+const { ZipArchive } = require('archiver') as { ZipArchive: new (opts?: object) => archiver.Archiver }
 import axios from 'axios'
 
 const cloudinary = configureCloudinary()
@@ -262,26 +263,34 @@ export class FolderService {
 
     // 4. Stream documents into the archive
     for (const doc of documents) {
-      if (!doc.cloudinaryUrl) continue
-
       // Calculate relative internal ZIP path
       const fullFolderPath = folderPathMap.get(doc.folder!.toString()) || rootFolder.name
       const relativeFolderPath = fullFolderPath.substring(prefixToRemoveLength)
 
       // Ensure file has an extension (Cloudinary sometimes strips it, but users need it to open the file)
       let fileName = doc.title
-      if (!fileName.includes('.')) {
-        const extMap: Record<string, string> = {
-          PDF: '.pdf',
-          Word: '.docx',
-          Image: '.jpg',
-          Excel: '.xlsx',
-          TextSnippet: '.txt'
-        }
-        fileName += extMap[doc.fileType] || ''
+      const extMap: Record<string, string> = {
+        PDF: '.pdf',
+        Word: '.docx',
+        Image: '.jpg',
+        Excel: '.xlsx',
+        TextSnippet: '.txt'
+      }
+      const extension = extMap[doc.fileType] || ''
+      if (extension && !fileName.toLowerCase().endsWith(extension.toLowerCase())) {
+        fileName += extension
       }
 
       const zipFilePath = `${relativeFolderPath}/${fileName}`
+
+      // Handle TextSnippets directly since they don't have a Cloudinary URL
+      if (doc.fileType === 'TextSnippet') {
+        const content = doc.extractedText || ''
+        archive.append(content, { name: zipFilePath })
+        continue
+      }
+
+      if (!doc.cloudinaryUrl) continue
 
       try {
         // 🚀 THE MAGIC: Stream the file directly from Cloudinary into the ZIP
@@ -292,7 +301,11 @@ export class FolderService {
           responseType: 'stream'
         })
 
-        archive.append(response.data, { name: zipFilePath })
+        await new Promise<void>((resolve, reject) => {
+          archive.append(response.data, { name: zipFilePath })
+          response.data.on('end', () => resolve())
+          response.data.on('error', (err: any) => reject(err))
+        })
       } catch (err) {
         console.error(`[ZIP Export] Failed to stream ${doc.title}:`, err)
         archive.append(`Failed to download this file from the server.`, {

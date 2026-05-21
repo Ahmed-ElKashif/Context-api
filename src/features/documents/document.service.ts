@@ -1,5 +1,6 @@
 import { DocumentModel, IDocument } from './document.model'
 import Folder from '../folders/folder.model'
+import { User } from '../users/user.model'
 import { configureCloudinary } from '../../config/cloudinary'
 import { EmbeddingService } from '../ai/search/vector.service'
 import { AppError } from '../../core/errors/AppError'
@@ -158,6 +159,12 @@ export class DocumentService {
       await Folder.findByIdAndUpdate(folderId, { updatedAt: new Date() })
     }
 
+    // 🛠️ THE FIX: Clear lastActiveDocumentId if it matches the deleted document
+    await User.updateOne(
+      { _id: userId, lastActiveDocumentId: docId },
+      { $unset: { lastActiveDocumentId: "" } }
+    )
+
     return true
   }
 
@@ -194,6 +201,12 @@ export class DocumentService {
         { $set: { updatedAt: new Date() } }
       )
     }
+
+    // 🛠️ THE FIX: Clear lastActiveDocumentId if any of the deleted documents were active
+    await User.updateOne(
+      { _id: userId, lastActiveDocumentId: { $in: ids } },
+      { $unset: { lastActiveDocumentId: "" } }
+    )
 
     return result
   }
