@@ -59,6 +59,9 @@ export interface BudgetStatus {
   limit: number
   remaining: number
   resetAt: Date
+  monthlyUsed: number
+  monthlyLimit: number
+  monthlyAllowed: boolean
 }
 
 /**
@@ -72,23 +75,30 @@ export interface BudgetStatus {
  */
 export class TokenBudgetService {
   /**
-   * Checks if a user is within their daily token budget.
+   * Checks if a user is within their daily and monthly token budget.
    * Returns a BudgetStatus object — caller decides whether to block the request.
    */
   static async checkBudget(userId: string): Promise<BudgetStatus> {
     const today = getTodayKey()
     const resetAt = getResetTime()
+    const monthlyLimit = parseInt(process.env.AI_MONTHLY_TOKEN_BUDGET || '1500000', 10)
 
     try {
       const record = await TokenBudgetModel.findOne({ userId, date: today })
       const tokensUsed = record?.tokensUsed ?? 0
 
+      const monthlyUsage = await this.getMonthlyUsage(userId)
+      const monthlyAllowed = monthlyUsage.tokensUsed < monthlyLimit
+
       return {
-        allowed: tokensUsed < DAILY_TOKEN_BUDGET,
+        allowed: tokensUsed < DAILY_TOKEN_BUDGET && monthlyAllowed,
         tokensUsed,
         limit: DAILY_TOKEN_BUDGET,
         remaining: Math.max(0, DAILY_TOKEN_BUDGET - tokensUsed),
-        resetAt
+        resetAt,
+        monthlyUsed: monthlyUsage.tokensUsed,
+        monthlyLimit,
+        monthlyAllowed
       }
     } catch (error) {
       // If DB read fails, allow the request (fail open — never block users due to our DB issues)
@@ -98,7 +108,10 @@ export class TokenBudgetService {
         tokensUsed: 0,
         limit: DAILY_TOKEN_BUDGET,
         remaining: DAILY_TOKEN_BUDGET,
-        resetAt
+        resetAt,
+        monthlyUsed: 0,
+        monthlyLimit,
+        monthlyAllowed: true
       }
     }
   }
