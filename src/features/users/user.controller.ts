@@ -49,6 +49,9 @@ export const getUserProfile = async (
         persona: user.persona,
         lastActiveDocumentId: (user as any).lastActiveDocumentId,
         lastActiveComparisonId: (user as any).lastActiveComparisonId,
+        hasCompletedTour: (user as any).hasCompletedTour ?? false,
+        hasCompletedPopulatedTour: (user as any).hasCompletedPopulatedTour ?? false,
+        hasCompletedLibraryTour: (user as any).hasCompletedLibraryTour ?? false,
         createdAt: user.createdAt
       }
     })
@@ -83,6 +86,9 @@ export const updateUserProfile = async (
         persona: result.user?.persona,
         lastActiveDocumentId: (result.user as any)?.lastActiveDocumentId,
         lastActiveComparisonId: (result.user as any)?.lastActiveComparisonId,
+        hasCompletedTour: (result.user as any)?.hasCompletedTour ?? false,
+        hasCompletedPopulatedTour: (result.user as any)?.hasCompletedPopulatedTour ?? false,
+        hasCompletedLibraryTour: (result.user as any)?.hasCompletedLibraryTour ?? false,
         createdAt: result.user?.createdAt
       }
     })

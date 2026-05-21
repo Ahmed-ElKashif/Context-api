@@ -17,6 +17,9 @@ export class UserService {
       persona?: 'general' | 'professional' | 'student' | 'developer'
       lastActiveDocumentId?: string | null
       lastActiveComparisonId?: string | null
+      hasCompletedTour?: boolean
+      hasCompletedPopulatedTour?: boolean
+      hasCompletedLibraryTour?: boolean
     }
   ): Promise<{ user?: IUser; error?: { message: string; statusCode: number } }> {
     const user = await User.findById(userId)
@@ -45,6 +48,15 @@ export class UserService {
     }
     if (updateData.lastActiveComparisonId !== undefined) {
       (user as any).lastActiveComparisonId = updateData.lastActiveComparisonId
+    }
+    if (updateData.hasCompletedTour !== undefined) {
+      (user as any).hasCompletedTour = updateData.hasCompletedTour
+    }
+    if (updateData.hasCompletedPopulatedTour !== undefined) {
+      (user as any).hasCompletedPopulatedTour = updateData.hasCompletedPopulatedTour
+    }
+    if (updateData.hasCompletedLibraryTour !== undefined) {
+      (user as any).hasCompletedLibraryTour = updateData.hasCompletedLibraryTour
     }
 
     if (updateData.password) {

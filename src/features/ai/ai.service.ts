@@ -283,7 +283,8 @@ export class AIService {
     documents: { _id?: string; id?: string; title: string }[]
   ) {
     // 1. Get existing folder paths so the AI doesn't reinvent the wheel
-    const existingPaths = await Folder.distinct('path', { user: userId })
+    const rawPaths = await Folder.distinct('path', { user: userId })
+    const existingPaths = rawPaths.filter((p) => !p.startsWith('Random files'))
 
     // 2. Extract IDs and fetch the rich semantic metadata from the DB!
     const docIds = documents.map((d) => d._id || d.id).filter(Boolean) as string[]
@@ -348,6 +349,7 @@ export class AIService {
       2. If no existing folder fits, invent a new, highly logical nested path (e.g., "Health/Medical Records" or "Personal/Receipts").
       3. Keep paths concise (maximum 3 levels deep).
       4. Group similar documents together.
+      5. NEVER place files inside the 'Random files' folder or use it in your paths. Generate new root folders instead.
     `)
 
     const humanPrompt = new HumanMessage(JSON.stringify(docPayload, null, 2))

@@ -1,5 +1,6 @@
 import { DocumentModel, IDocument } from './document.model'
 import Folder from '../folders/folder.model'
+import { User } from '../users/user.model'
 import { configureCloudinary } from '../../config/cloudinary'
 import { ChatOpenAI } from '@langchain/openai'
 import { BaseChatModel } from '@langchain/core/language_models/chat_models'
@@ -177,6 +178,12 @@ export class DocumentService {
       await Folder.findByIdAndUpdate(folderId, { updatedAt: new Date() })
     }
 
+    // 🛠️ THE FIX: Clear lastActiveDocumentId if it matches the deleted document
+    await User.updateOne(
+      { _id: userId, lastActiveDocumentId: docId },
+      { $unset: { lastActiveDocumentId: "" } }
+    )
+
     return true
   }
 
@@ -213,6 +220,12 @@ export class DocumentService {
         { $set: { updatedAt: new Date() } }
       )
     }
+
+    // 🛠️ THE FIX: Clear lastActiveDocumentId if any of the deleted documents were active
+    await User.updateOne(
+      { _id: userId, lastActiveDocumentId: { $in: ids } },
+      { $unset: { lastActiveDocumentId: "" } }
+    )
 
     return result
   }

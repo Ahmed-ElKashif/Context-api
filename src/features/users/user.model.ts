@@ -13,6 +13,9 @@ export interface IUser extends Document {
   resetPasswordToken?: string
   resetPasswordExpires?: Date
   isSuspended?: boolean            // ← added (needed by admin suspend endpoint)
+  hasCompletedTour?: boolean
+  hasCompletedPopulatedTour?: boolean
+  hasCompletedLibraryTour?: boolean
   theme?: 'light' | 'dark' | 'system'
   notificationsEnabled?: boolean
   language?: string
@@ -55,6 +58,9 @@ const userSchema = new Schema<IUser>(
     avatar: { type: String, required: false },
     avatarPublicId: { type: String, required: false },
     isSuspended: { type: Boolean, default: false },
+    hasCompletedTour: { type: Boolean, default: false },
+    hasCompletedPopulatedTour: { type: Boolean, default: false },
+    hasCompletedLibraryTour: { type: Boolean, default: false },
     theme: {
       type: String,
       enum: ['light', 'dark', 'system'],
