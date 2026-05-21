@@ -3,8 +3,11 @@ import { FolderService } from './folder.service'
 import { AppError } from '../../core/errors/AppError'
 import { FolderProposerService } from '../ai/folder-proposer.service'
 import { estimateTokens } from '../../core/services/token-budget.service'
-import archiver from 'archiver' // 📦 NEW: Import archiver
-
+// archiver v8: @types/archiver is v7 (stale) — ZipArchive is not in the types yet.
+// We use require() for the runtime constructor and the archiver type for annotations.
+import archiver from 'archiver'
+const { ZipArchive } = require('archiver') as { ZipArchive: new (opts?: object) => archiver.Archiver }
+import Folder from './folder.model'
 export const createFolder = async (
   req: Request,
   res: Response,
@@ -240,16 +243,22 @@ export const downloadFolderZip = async (
       return next(new AppError('Folder ID is required', 400))
     }
 
-    // 1. Tell the browser to expect a file download
+    // 1. Verify folder exists before sending any headers
+    const rootFolder = await Folder.findOne({ _id: folderId, user: userId })
+    if (!rootFolder) {
+      return next(new AppError('Target folder not found.', 404))
+    }
+
+    // 2. Tell the browser to expect a file download
     res.setHeader('Content-Type', 'application/zip')
     res.setHeader('Content-Disposition', `attachment; filename="smart_folder_export.zip"`)
 
-    // 2. Initialize the archiver
-    const archive = archiver('zip', {
+    // 3. Initialize the archiver — ZipArchive sets up the zip plugin and pipes the module correctly
+    const archive = new ZipArchive({
       zlib: { level: 9 } // Maximum compression
     })
 
-    // 3. Handle Archiver events
+    // 4. Handle Archiver events
     archive.on('warning', (err) => {
       if (err.code === 'ENOENT') {
         console.warn('[ZIP Warning]', err)
@@ -259,10 +268,15 @@ export const downloadFolderZip = async (
     })
 
     archive.on('error', (err) => {
-      throw err
+      console.error('[ZIP Export Archiver Error]:', err)
+      if (!res.headersSent) {
+        next(err)
+      } else {
+        res.end()
+      }
     })
 
-    // 4. Pipe the archive stream DIRECTLY to the Express Response
+    // 5. Pipe the archive stream DIRECTLY to the Express Response
     archive.pipe(res)
 
     // 5. Trigger the Service logic to start streaming Cloudinary files into the archive
@@ -271,6 +285,7 @@ export const downloadFolderZip = async (
     // 6. Tell archiver we are done appending files so it can close the stream
     await archive.finalize()
   } catch (error) {
+    console.error('[ZIP Export Error - Full Stack]:', error)
     // If the headers were already sent, we can't send a JSON error, we just have to end the connection
     if (res.headersSent) {
       console.error('[ZIP Export Error - Connection Terminated]:', error)
