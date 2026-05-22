@@ -46,7 +46,7 @@ export class SynthesizerAgent {
       ['human', 'Here is the data for the selected files:\n{documentsData}']
     ])
 
-    const chain = prompt.pipe(this._model).pipe(new StringOutputParser())
+    const chain = prompt.pipe(this._model.withConfig({ timeout: 20_000 })).pipe(new StringOutputParser())
 
     const response = await chain.invoke({
       documentsData

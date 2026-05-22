@@ -88,7 +88,8 @@ export class DocumentChatService {
       ${contextText}
     `)
 
-    const response = await llm.invoke([systemPrompt, ...formattedHistory, new HumanMessage(query)])
+    // ⏱️ 30s deadline: chat is interactive — hanging indefinitely is worse than a fast failure.
+    const response = await llm.withConfig({ timeout: 30_000 }).invoke([systemPrompt, ...formattedHistory, new HumanMessage(query)])
     const aiResponseText = (response.content as string).trim()
 
     // 4. Save to Database

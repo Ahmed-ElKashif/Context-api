@@ -126,7 +126,9 @@ export class FolderOrganizerService {
 
     // 7. Invoke the model and enrich the response with human-readable paths
     try {
-      const response = await llm.invoke([systemPrompt, humanPrompt])
+      // ⏱️ 30s deadline: folder proposal with large batches can be slow.
+      // Fail fast and let the error surface cleanly rather than hanging.
+      const response = await llm.withConfig({ timeout: 30_000 }).invoke([systemPrompt, humanPrompt])
 
       const enrichedUpdates = response.updates.map((update: any) => {
         const doc = dbDocs.find((d) => d._id.toString() === update.documentId)

@@ -142,7 +142,7 @@ export const getComparisonHistory = async (
     if (!userId) return next(new AppError('Unauthorized', 401))
 
     const history = await ComparisonRecordModel.find({ user: userId })
-      .select('titleA titleB createdAt')
+      .select('titleA titleB customTitle createdAt')
       .sort({ createdAt: -1 })
       .limit(50)
 
@@ -197,6 +197,63 @@ export const saveComparisonRecord = async (
     await User.findByIdAndUpdate(userId, { lastActiveComparisonId: newRecord._id })
 
     res.status(201).json({ success: true, data: newRecord })
+  } catch (error) {
+    next(error)
+  }
+}
+
+export const updateComparisonRecord = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id?.toString() || (req as any).user?.id
+    if (!userId) return next(new AppError('Unauthorized', 401))
+
+    const { customTitle } = req.body
+
+    const record = await ComparisonRecordModel.findOneAndUpdate(
+      { _id: req.params.id, user: userId },
+      { customTitle },
+      { new: true }
+    )
+
+    if (!record) return next(new AppError('Comparison record not found', 404))
+
+    res.status(200).json({ success: true, data: record })
+  } catch (error) {
+    next(error)
+  }
+}
+
+export const deleteComparisonRecord = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const userId = req.user?._id?.toString() || (req as any).user?.id
+    if (!userId) return next(new AppError('Unauthorized', 401))
+
+    const record = await ComparisonRecordModel.findOneAndDelete({ _id: req.params.id, user: userId })
+    if (!record) return next(new AppError('Comparison record not found', 404))
+
+    // Cascade delete associated chat history to prevent orphans
+    // We have to import ComparisonMessageModel dynamically or add it at the top,
+    // let me just add it at the top. I'll need a separate replace chunk for the import.
+    // Actually, I'll just require it here to keep it simple since it's a one-off.
+    const { ComparisonMessageModel } = require('./comparison-chat.model')
+    await ComparisonMessageModel.deleteMany({ user: userId, docIdA: record.docIdA, docIdB: record.docIdB })
+
+    // If this was the user's active comparison, clear it out
+    const user = await User.findById(userId)
+    if (user && user.lastActiveComparisonId?.toString() === req.params.id) {
+      user.lastActiveComparisonId = undefined
+      await user.save()
+    }
+
+    res.status(200).json({ success: true, data: {} })
   } catch (error) {
     next(error)
   }

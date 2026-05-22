@@ -152,9 +152,12 @@ export class OrchestratorService {
 
     // Strict Try/Catch on Agent Execution
     try {
-      response = await agent.invoke({
-        messages: [systemPrompt, new HumanMessage(`Analyze the following document text:\n\n${textPreview}`)]
-      })
+      response = await agent.invoke(
+        { messages: [systemPrompt, new HumanMessage(`Analyze the following document text:\n\n${textPreview}`)] },
+        // ⏱️ 60s deadline: the ReAct agent does 3 sequential LLM tool calls.
+        // Give it more time than a single call, but still enforce a ceiling.
+        { timeout: 60_000 }
+      )
 
       // Log Token Usage
       const aiMessages = response.messages.filter(isAIMessage)
