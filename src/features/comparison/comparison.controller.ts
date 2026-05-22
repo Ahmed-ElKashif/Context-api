@@ -28,7 +28,20 @@ export const compareDocuments = async (
 
     const [id1, id2] = documentIds
 
-    // 2. Delegate to Service
+    // 2. Check for existing duplicate comparison to save AI tokens
+    const existingRecord = await ComparisonRecordModel.findOne({
+      user: userId,
+      $or: [
+        { docIdA: id1, docIdB: id2 },
+        { docIdA: id2, docIdB: id1 }
+      ]
+    })
+
+    if (existingRecord) {
+      return next(new AppError('You have already compared these two documents. Please check your comparison history.', 400))
+    }
+
+    // 3. Delegate to Service
     const result = await ComparisonService.performComparison(userId, id1, id2)
 
     if (result.error) {
