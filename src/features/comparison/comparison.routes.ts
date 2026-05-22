@@ -5,7 +5,9 @@ import {
   chatWithComparison,
   getComparisonHistory,
   getComparisonRecordById,
-  saveComparisonRecord
+  saveComparisonRecord,
+  updateComparisonRecord,
+  deleteComparisonRecord
 } from './comparison.controller'
 import { protect } from '../../core/middlewares/auth.middleware'
 import { validate } from '../../core/middlewares/validate.middleware'
@@ -34,7 +36,10 @@ router.route('/history')
   .get(getComparisonHistory)
   .post(saveComparisonRecord)
 
-router.get('/history/:id', getComparisonRecordById)
+router.route('/history/:id')
+  .get(getComparisonRecordById)
+  .patch(updateComparisonRecord)
+  .delete(deleteComparisonRecord)
 
 
 // ==========================================

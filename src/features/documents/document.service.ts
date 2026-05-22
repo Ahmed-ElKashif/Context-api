@@ -4,6 +4,7 @@ import { User } from '../users/user.model'
 import { configureCloudinary } from '../../config/cloudinary'
 import { EmbeddingService } from '../ai/search/vector.service'
 import { AppError } from '../../core/errors/AppError'
+import { ChatMessageModel } from '../ai/models/chat.model'
 
 const cloudinary = configureCloudinary()
 
@@ -154,6 +155,9 @@ export class DocumentService {
     // 🗑️ Purge all semantic chunks from Vector Store
     await EmbeddingService.deleteDocumentChunks(docId, userId)
 
+    // 🗑️ Delete associated chat history
+    await ChatMessageModel.deleteMany({ documentId: docId, user: userId })
+
     // 🛠️ THE FIX 3: Update the parent folder's timestamp when a document is deleted!
     if (folderId) {
       await Folder.findByIdAndUpdate(folderId, { updatedAt: new Date() })
@@ -193,6 +197,9 @@ export class DocumentService {
 
     // 🗑️ Purge all semantic chunks from Vector Store
     await EmbeddingService.deleteDocumentChunks(ids, userId)
+
+    // 🗑️ Delete associated chat history
+    await ChatMessageModel.deleteMany({ documentId: { $in: ids }, user: userId })
 
     // 🛠️ THE FIX 4: Update timestamps for all affected folders at once!
     if (folderIdsToUpdate.length > 0) {

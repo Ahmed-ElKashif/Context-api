@@ -179,7 +179,9 @@ export class FolderProposerService {
     // ── 5. Invoke and return ───────────────────────────────────────────────
     console.log(`[FolderProposer] Clustering ${docs.length} documents into semantic folders...`)
 
-    const result = await llm.invoke([systemMessage, humanMessage])
+    // ⏱️ 60s deadline: this sends up to 100 document summaries in a single call —
+    // the most expensive prompt in the system. Still enforce a ceiling.
+    const result = await llm.withConfig({ timeout: 60_000 }).invoke([systemMessage, humanMessage])
 
     console.log(
       `[FolderProposer] Proposed ${result.folders.length} top-level folders for ${docs.length} documents.`

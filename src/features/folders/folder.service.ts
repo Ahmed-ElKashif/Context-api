@@ -25,23 +25,39 @@ export class FolderService {
     name: string,
     parentFolderId?: string
   ): Promise<{ folder?: IFolder; error?: string }> {
-    const existingFolder = await Folder.findOne({
-      name,
-      user: userId,
-      parentFolder: parentFolderId || null
-    })
+    let finalName = name;
+    
+    // Prevent overriding the system reserved "Random Files"
+    if (finalName.trim().toLowerCase() === 'random files') {
+      let counter = 1;
+      let collision = await Folder.findOne({ name: finalName, user: userId, parentFolder: parentFolderId || null });
+      if (collision) {
+        finalName = `Random Files(${counter})`;
+        collision = await Folder.findOne({ name: finalName, user: userId, parentFolder: parentFolderId || null });
+        while (collision) {
+          counter++;
+          finalName = `Random Files(${counter})`;
+          collision = await Folder.findOne({ name: finalName, user: userId, parentFolder: parentFolderId || null });
+        }
+      }
+    } else {
+      const existingFolder = await Folder.findOne({
+        name: finalName,
+        user: userId,
+        parentFolder: parentFolderId || null
+      });
+      if (existingFolder) return { error: 'A folder with this name already exists here.' };
+    }
 
-    if (existingFolder) return { error: 'A folder with this name already exists here.' }
-
-    let newPath = name
+    let newPath = finalName
     if (parentFolderId) {
       const parent = await Folder.findById(parentFolderId)
       if (!parent) return { error: 'Parent folder not found.' }
-      newPath = `${parent.path}/${name}`
+      newPath = `${parent.path}/${finalName}`
     }
 
     const folder = await Folder.create({
-      name,
+      name: finalName,
       user: userId,
       parentFolder: parentFolderId || null,
       path: newPath
@@ -170,17 +186,32 @@ export class FolderService {
     const folder = await Folder.findOne({ _id: folderId, user: userId })
     if (!folder) return { error: 'Folder not found.' }
 
-    const collision = await Folder.findOne({
-      name: newName,
-      parentFolder: folder.parentFolder,
-      user: userId
-    })
+    let finalNewName = newName;
+    if (finalNewName.trim().toLowerCase() === 'random files') {
+      let counter = 1;
+      let collision = await Folder.findOne({ name: finalNewName, user: userId, parentFolder: folder.parentFolder });
+      if (collision && collision._id.toString() !== folderId) {
+        finalNewName = `Random Files(${counter})`;
+        collision = await Folder.findOne({ name: finalNewName, user: userId, parentFolder: folder.parentFolder });
+        while (collision && collision._id.toString() !== folderId) {
+          counter++;
+          finalNewName = `Random Files(${counter})`;
+          collision = await Folder.findOne({ name: finalNewName, user: userId, parentFolder: folder.parentFolder });
+        }
+      }
+    } else {
+      const collision = await Folder.findOne({
+        name: finalNewName,
+        parentFolder: folder.parentFolder,
+        user: userId
+      })
 
-    if (collision) return { error: 'Name already in use in this destination.' }
+      if (collision) return { error: 'Name already in use in this destination.' }
+    }
 
     const oldName = folder.name
-    folder.name = newName
-    folder.path = folder.path.replace(new RegExp(`${oldName}$`), newName)
+    folder.name = finalNewName
+    folder.path = folder.path.replace(new RegExp(`${oldName}$`), finalNewName)
     folder.updatedAt = new Date()
 
     await folder.save()

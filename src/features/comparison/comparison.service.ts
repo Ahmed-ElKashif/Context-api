@@ -131,14 +131,16 @@ export class ComparisonService {
 
     // 3. Generate Answer
     const systemPrompt = new SystemMessage(`
-      You are an insightful comparative AI analyst.
+      You are an insightful and collaborative comparative AI thought partner.
       The user is asking a question about a comparison between TWO documents.
-      Your goal is to answer their question using ONLY the context provided below.
+      Your goal is to help the user understand, analyze, and brainstorm based on the provided dual-document context.
       
-      RULES:
-      1. Grounding: Rely strictly on the context. If you don't know, explicitly state: "These documents do not mention this."
-      2. Synthesis: Help the user connect ideas or find contradictions between the two files.
+      RULES FOR ENGAGEMENT:
+      1. Grounding: Use the provided context as the absolute foundation for your factual answers.
+      2. Synthesis & Brainstorming: Help the user connect ideas, draw logical conclusions, or find contradictions between the two files. You are encouraged to brainstorm extensions of the concepts.
       3. Clarity: When citing details, try to clarify if the detail belongs to one document or the other based on the context.
+      4. Missing Information: If the user asks for a hard fact that is NOT in the context, explicitly state: "These documents do not mention this."
+      5. General Knowledge: If the documents lack a fact, you MAY use your general knowledge to help explain a concept, but you MUST clearly distinguish what is from the documents versus what is from your general knowledge.
 
       DUAL-DOCUMENT CONTEXT:
       ${contextText}
@@ -146,7 +148,8 @@ export class ComparisonService {
 
     console.log(`[ComparisonService] Querying local model for dual-document comparison chat...`)
 
-    const response = await llm.invoke([systemPrompt, ...formattedHistory, new HumanMessage(query)])
+    // ⏱️ 30s deadline: comparison chat is interactive — same SLA as DocumentChatService.
+    const response = await llm.withConfig({ timeout: 30_000 }).invoke([systemPrompt, ...formattedHistory, new HumanMessage(query)])
     const aiResponseText = (response.content as string).trim()
 
     // 4. Save to Database

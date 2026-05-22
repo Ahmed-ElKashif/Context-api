@@ -6,6 +6,7 @@ export interface IComparisonRecord extends Document {
   docIdB: mongoose.Types.ObjectId
   titleA: string
   titleB: string
+  customTitle?: string
   comparison: Record<string, any>  // Full DeepThinker result payload
   createdAt: Date
   updatedAt: Date
@@ -18,6 +19,7 @@ const comparisonRecordSchema = new Schema<IComparisonRecord>(
     docIdB: { type: Schema.Types.ObjectId, ref: 'Document', required: true },
     titleA: { type: String, required: true },
     titleB: { type: String, required: true },
+    customTitle: { type: String, required: false },
     comparison: { type: Schema.Types.Mixed, required: true }
   },
   { timestamps: true }
