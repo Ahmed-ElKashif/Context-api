@@ -53,7 +53,8 @@ export class FolderOrganizerService {
     documents: { _id?: string; id?: string; title: string }[]
   ) {
     // 1. Get existing folder paths so the AI doesn't reinvent the wheel
-    const existingPaths = await Folder.distinct('path', { user: userId })
+    const allPaths = await Folder.distinct('path', { user: userId })
+    const existingPaths = allPaths.filter((p: string) => !p.toLowerCase().includes('random files'))
 
     // 2. Fetch rich semantic metadata for each document from the DB
     const docIds = documents.map((d) => d._id || d.id).filter(Boolean) as string[]
@@ -118,6 +119,7 @@ export class FolderOrganizerService {
       3. Keep paths concise (maximum 3 levels deep).
       4. Group similar documents together.
       5. CRITICAL: You MUST return exactly one update object for EVERY document ID provided in the input payload. Do not skip or omit any documents.
+      6. CRITICAL: NEVER propose a path containing "Random Files" or anything similar. This exact name is strictly reserved for system operations.
     `)
 
     const humanPrompt = new HumanMessage(JSON.stringify(docPayload, null, 2))
@@ -196,8 +198,13 @@ export class FolderOrganizerService {
 
     // Process each AI proposal — build the folder path incrementally
     for (const update of updates) {
-      const { documentId, newPath } = update
+      let { documentId, newPath } = update
       if (!documentId || !newPath) continue
+
+      // Hard logic guard: if AI hallucinates and uses "Random Files", force it to "Miscellaneous"
+      if (newPath.toLowerCase().includes('random files')) {
+        newPath = newPath.replace(/random files/gi, 'Miscellaneous')
+      }
 
       const pathParts = newPath.split('/').filter((p) => p.trim() !== '')
       let currentParentId = null

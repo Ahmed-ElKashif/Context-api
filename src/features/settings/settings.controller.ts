@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express'
 import { User } from '../users/user.model'
 import { AppError } from '../../core/errors/AppError'
-import { TokenBudgetService } from '../../core/services/token-budget.service'
+import { TokenBudgetService, MONTHLY_TOKEN_BUDGET } from '../../core/services/token-budget.service'
 
 // GET /api/settings
 export const getSettings = async (
@@ -30,7 +30,7 @@ export const getSettings = async (
           dailyLimit: budgetStatus.limit,
           remaining: budgetStatus.remaining,
           monthlyUsed: monthlyStatus.tokensUsed,
-          monthlyLimit: parseInt(process.env.AI_MONTHLY_TOKEN_BUDGET || '1500000', 10)
+          monthlyLimit: MONTHLY_TOKEN_BUDGET
         }
       }
     })
@@ -74,7 +74,7 @@ export const updateSettings = async (
           dailyLimit: budgetStatus.limit,
           remaining: budgetStatus.remaining,
           monthlyUsed: monthlyStatus.tokensUsed,
-          monthlyLimit: parseInt(process.env.AI_MONTHLY_TOKEN_BUDGET || '1500000', 10)
+          monthlyLimit: MONTHLY_TOKEN_BUDGET
         }
       }
     })
@@ -115,7 +115,7 @@ export const resetSettings = async (
           dailyLimit: budgetStatus.limit,
           remaining: budgetStatus.remaining,
           monthlyUsed: monthlyStatus.tokensUsed,
-          monthlyLimit: parseInt(process.env.AI_MONTHLY_TOKEN_BUDGET || '1500000', 10)
+          monthlyLimit: MONTHLY_TOKEN_BUDGET
         }
       }
     })

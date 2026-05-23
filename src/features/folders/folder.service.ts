@@ -6,6 +6,9 @@ import { EmbeddingService } from '../ai/search/vector.service'
 import archiver from 'archiver'
 const { ZipArchive } = require('archiver') as { ZipArchive: new (opts?: object) => archiver.Archiver }
 import axios from 'axios'
+import { ChatMessageModel } from '../ai/models/chat.model'
+import { ComparisonRecordModel } from '../comparison/comparison-record.model'
+import { ComparisonMessageModel } from '../comparison/comparison-chat.model'
 
 const cloudinary = configureCloudinary()
 
@@ -30,15 +33,12 @@ export class FolderService {
     // Prevent overriding the system reserved "Random Files"
     if (finalName.trim().toLowerCase() === 'random files') {
       let counter = 1;
+      finalName = `Random Files(${counter})`;
       let collision = await Folder.findOne({ name: finalName, user: userId, parentFolder: parentFolderId || null });
-      if (collision) {
+      while (collision) {
+        counter++;
         finalName = `Random Files(${counter})`;
         collision = await Folder.findOne({ name: finalName, user: userId, parentFolder: parentFolderId || null });
-        while (collision) {
-          counter++;
-          finalName = `Random Files(${counter})`;
-          collision = await Folder.findOne({ name: finalName, user: userId, parentFolder: parentFolderId || null });
-        }
       }
     } else {
       const existingFolder = await Folder.findOne({
@@ -189,15 +189,12 @@ export class FolderService {
     let finalNewName = newName;
     if (finalNewName.trim().toLowerCase() === 'random files') {
       let counter = 1;
+      finalNewName = `Random Files(${counter})`;
       let collision = await Folder.findOne({ name: finalNewName, user: userId, parentFolder: folder.parentFolder });
-      if (collision && collision._id.toString() !== folderId) {
+      while (collision && collision._id.toString() !== folderId) {
+        counter++;
         finalNewName = `Random Files(${counter})`;
         collision = await Folder.findOne({ name: finalNewName, user: userId, parentFolder: folder.parentFolder });
-        while (collision && collision._id.toString() !== folderId) {
-          counter++;
-          finalNewName = `Random Files(${counter})`;
-          collision = await Folder.findOne({ name: finalNewName, user: userId, parentFolder: folder.parentFolder });
-        }
       }
     } else {
       const collision = await Folder.findOne({
@@ -253,6 +250,20 @@ export class FolderService {
     const docIdsToDelete = documentsToDelete.map((doc) => doc._id.toString())
     if (docIdsToDelete.length > 0) {
       await EmbeddingService.deleteDocumentChunks(docIdsToDelete, userId)
+
+      // 🗑️ Delete associated chat history
+      await ChatMessageModel.deleteMany({ documentId: { $in: docIdsToDelete }, user: userId })
+
+      // 🗑️ Cascade delete any comparison records referencing these documents
+      const comparisons = await ComparisonRecordModel.find({ 
+        user: userId, 
+        $or: [{ docIdA: { $in: docIdsToDelete } }, { docIdB: { $in: docIdsToDelete } }] 
+      })
+      if (comparisons.length > 0) {
+        const compIds = comparisons.map(c => c._id)
+        await ComparisonRecordModel.deleteMany({ _id: { $in: compIds } })
+        await ComparisonMessageModel.deleteMany({ user: userId, $or: [{ docIdA: { $in: docIdsToDelete } }, { docIdB: { $in: docIdsToDelete } }] })
+      }
     }
 
     await DocumentModel.deleteMany({ user: userId, folder: { $in: folderIdsToDelete } })
