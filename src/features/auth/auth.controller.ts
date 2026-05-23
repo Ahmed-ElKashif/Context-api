@@ -28,6 +28,7 @@ export const register = async (req: Request, res: Response, next: NextFunction):
         hasCompletedTour: (result.user as any)?.hasCompletedTour ?? false,
         hasCompletedPopulatedTour: (result.user as any)?.hasCompletedPopulatedTour ?? false,
         hasCompletedLibraryTour: (result.user as any)?.hasCompletedLibraryTour ?? false,
+        hasCompletedComparisonTour: (result.user as any)?.hasCompletedComparisonTour ?? false,
       }
     })
   } catch (error) {
@@ -61,6 +62,7 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
         hasCompletedTour: (result.user as any)?.hasCompletedTour ?? false,
         hasCompletedPopulatedTour: (result.user as any)?.hasCompletedPopulatedTour ?? false,
         hasCompletedLibraryTour: (result.user as any)?.hasCompletedLibraryTour ?? false,
+        hasCompletedComparisonTour: (result.user as any)?.hasCompletedComparisonTour ?? false,
       }
     })
   } catch (error) {

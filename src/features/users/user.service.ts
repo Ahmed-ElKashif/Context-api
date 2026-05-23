@@ -20,6 +20,7 @@ export class UserService {
       hasCompletedTour?: boolean
       hasCompletedPopulatedTour?: boolean
       hasCompletedLibraryTour?: boolean
+      hasCompletedComparisonTour?: boolean
     }
   ): Promise<{ user?: IUser; error?: { message: string; statusCode: number } }> {
     const user = await User.findById(userId)
@@ -57,6 +58,9 @@ export class UserService {
     }
     if (updateData.hasCompletedLibraryTour !== undefined) {
       (user as any).hasCompletedLibraryTour = updateData.hasCompletedLibraryTour
+    }
+    if (updateData.hasCompletedComparisonTour !== undefined) {
+      (user as any).hasCompletedComparisonTour = updateData.hasCompletedComparisonTour
     }
 
     if (updateData.password) {
