@@ -170,6 +170,7 @@ export class FolderProposerService {
       6. Maximum 8 top-level folders. Merge small groups (1–2 docs) under a "Miscellaneous" folder.
       7. Write a clear, one-sentence reason for each folder and subfolder.
       8. Use the exact document IDs from the input — do not invent or modify them.
+      9. CRITICAL: NEVER name any folder or subfolder "Random Files" or anything similar. This exact name is strictly reserved for system operations.
     `)
 
     const humanMessage = new HumanMessage(
