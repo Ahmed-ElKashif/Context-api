@@ -30,15 +30,12 @@ export class FolderService {
     // Prevent overriding the system reserved "Random Files"
     if (finalName.trim().toLowerCase() === 'random files') {
       let counter = 1;
+      finalName = `Random Files(${counter})`;
       let collision = await Folder.findOne({ name: finalName, user: userId, parentFolder: parentFolderId || null });
-      if (collision) {
+      while (collision) {
+        counter++;
         finalName = `Random Files(${counter})`;
         collision = await Folder.findOne({ name: finalName, user: userId, parentFolder: parentFolderId || null });
-        while (collision) {
-          counter++;
-          finalName = `Random Files(${counter})`;
-          collision = await Folder.findOne({ name: finalName, user: userId, parentFolder: parentFolderId || null });
-        }
       }
     } else {
       const existingFolder = await Folder.findOne({
@@ -189,15 +186,12 @@ export class FolderService {
     let finalNewName = newName;
     if (finalNewName.trim().toLowerCase() === 'random files') {
       let counter = 1;
+      finalNewName = `Random Files(${counter})`;
       let collision = await Folder.findOne({ name: finalNewName, user: userId, parentFolder: folder.parentFolder });
-      if (collision && collision._id.toString() !== folderId) {
+      while (collision && collision._id.toString() !== folderId) {
+        counter++;
         finalNewName = `Random Files(${counter})`;
         collision = await Folder.findOne({ name: finalNewName, user: userId, parentFolder: folder.parentFolder });
-        while (collision && collision._id.toString() !== folderId) {
-          counter++;
-          finalNewName = `Random Files(${counter})`;
-          collision = await Folder.findOne({ name: finalNewName, user: userId, parentFolder: folder.parentFolder });
-        }
       }
     } else {
       const collision = await Folder.findOne({
