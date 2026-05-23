@@ -10,7 +10,7 @@ const defaultPrimaryVisionModel = new ChatOpenAI({
   configuration: {
     baseURL: 'https://api.groq.com/openai/v1'
   },
-  model: process.env.GROQ_VIRTUAL_CORTEX_MODEL || 'llama-3.2-11b-vision-preview',
+  model: process.env.GROQ_VIRTUAL_CORTEX_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct',
   temperature: 0.1,
   maxRetries: 1 // Fail fast — if Groq hiccups, jump to OpenAI immediately
 })
