@@ -10,6 +10,8 @@ const transporter = nodemailer.createTransport({
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS
   },
+  // Force IPv4 because Railway containers do not support IPv6 outbound connections
+  family: 4,
   // Add timeouts so it fails fast instead of hanging for 120 seconds
   connectionTimeout: 10000,
   greetingTimeout: 10000,
