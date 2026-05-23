@@ -16,7 +16,7 @@ const transporter = nodemailer.createTransport({
   connectionTimeout: 10000,
   greetingTimeout: 10000,
   socketTimeout: 10000,
-})
+} as any)
 
 console.log(`[MailService] Initialized with SMTP Host: ${process.env.SMTP_HOST || 'smtp.resend.com'} on port ${port}`);
 export const sendResetPasswordEmail = async (email: string, resetToken: string) => {
