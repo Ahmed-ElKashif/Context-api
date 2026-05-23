@@ -5,6 +5,8 @@ import { configureCloudinary } from '../../config/cloudinary'
 import { EmbeddingService } from '../ai/search/vector.service'
 import { AppError } from '../../core/errors/AppError'
 import { ChatMessageModel } from '../ai/models/chat.model'
+import { ComparisonRecordModel } from '../comparison/comparison-record.model'
+import { ComparisonMessageModel } from '../comparison/comparison-chat.model'
 
 const cloudinary = configureCloudinary()
 
@@ -158,6 +160,17 @@ export class DocumentService {
     // 🗑️ Delete associated chat history
     await ChatMessageModel.deleteMany({ documentId: docId, user: userId })
 
+    // 🗑️ Cascade delete any comparison records referencing this document, plus their chats
+    const comparisons = await ComparisonRecordModel.find({ 
+      user: userId, 
+      $or: [{ docIdA: docId }, { docIdB: docId }] 
+    })
+    if (comparisons.length > 0) {
+      const compIds = comparisons.map(c => c._id)
+      await ComparisonRecordModel.deleteMany({ _id: { $in: compIds } })
+      await ComparisonMessageModel.deleteMany({ user: userId, $or: [{ docIdA: docId }, { docIdB: docId }] })
+    }
+
     // 🛠️ THE FIX 3: Update the parent folder's timestamp when a document is deleted!
     if (folderId) {
       await Folder.findByIdAndUpdate(folderId, { updatedAt: new Date() })
@@ -200,6 +213,17 @@ export class DocumentService {
 
     // 🗑️ Delete associated chat history
     await ChatMessageModel.deleteMany({ documentId: { $in: ids }, user: userId })
+
+    // 🗑️ Cascade delete any comparison records referencing these documents
+    const comparisons = await ComparisonRecordModel.find({ 
+      user: userId, 
+      $or: [{ docIdA: { $in: ids } }, { docIdB: { $in: ids } }] 
+    })
+    if (comparisons.length > 0) {
+      const compIds = comparisons.map(c => c._id)
+      await ComparisonRecordModel.deleteMany({ _id: { $in: compIds } })
+      await ComparisonMessageModel.deleteMany({ user: userId, $or: [{ docIdA: { $in: ids } }, { docIdB: { $in: ids } }] })
+    }
 
     // 🛠️ THE FIX 4: Update timestamps for all affected folders at once!
     if (folderIdsToUpdate.length > 0) {
