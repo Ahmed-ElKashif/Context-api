@@ -52,6 +52,7 @@ export const getUserProfile = async (
         hasCompletedTour: (user as any).hasCompletedTour ?? false,
         hasCompletedPopulatedTour: (user as any).hasCompletedPopulatedTour ?? false,
         hasCompletedLibraryTour: (user as any).hasCompletedLibraryTour ?? false,
+        hasCompletedComparisonTour: (user as any).hasCompletedComparisonTour ?? false,
         createdAt: user.createdAt
       }
     })
@@ -89,6 +90,7 @@ export const updateUserProfile = async (
         hasCompletedTour: (result.user as any)?.hasCompletedTour ?? false,
         hasCompletedPopulatedTour: (result.user as any)?.hasCompletedPopulatedTour ?? false,
         hasCompletedLibraryTour: (result.user as any)?.hasCompletedLibraryTour ?? false,
+        hasCompletedComparisonTour: (result.user as any)?.hasCompletedComparisonTour ?? false,
         createdAt: result.user?.createdAt
       }
     })

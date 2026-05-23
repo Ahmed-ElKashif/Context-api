@@ -16,6 +16,7 @@ export interface IUser extends Document {
   hasCompletedTour?: boolean
   hasCompletedPopulatedTour?: boolean
   hasCompletedLibraryTour?: boolean
+  hasCompletedComparisonTour?: boolean
   theme?: 'light' | 'dark' | 'system'
   notificationsEnabled?: boolean
   language?: string
@@ -61,6 +62,7 @@ const userSchema = new Schema<IUser>(
     hasCompletedTour: { type: Boolean, default: false },
     hasCompletedPopulatedTour: { type: Boolean, default: false },
     hasCompletedLibraryTour: { type: Boolean, default: false },
+    hasCompletedComparisonTour: { type: Boolean, default: false },
     theme: {
       type: String,
       enum: ['light', 'dark', 'system'],
