@@ -1,4 +1,4 @@
-import { DocumentModel, CognitiveLoad } from './document.model'
+import { DocumentModel, CognitiveLoad } from '../document.model'
 
 // ─── Scoring constants ────────────────────────────────────────────────────────
 

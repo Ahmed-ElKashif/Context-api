@@ -9,9 +9,16 @@ const transporter = nodemailer.createTransport({
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS
-  }
-})
+  },
+  // Force IPv4 because Railway containers do not support IPv6 outbound connections
+  family: 4,
+  // Add timeouts so it fails fast instead of hanging for 120 seconds
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 10000,
+} as any)
 
+console.log(`[MailService] Initialized with SMTP Host: ${process.env.SMTP_HOST || 'smtp.resend.com'} on port ${port}`);
 export const sendResetPasswordEmail = async (email: string, resetToken: string) => {
   const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/reset-password?token=${resetToken}`
 

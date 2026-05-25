@@ -25,6 +25,10 @@ export const register = async (req: Request, res: Response, next: NextFunction):
         role: result.user?.role ?? 'user',   // ← added
         lastActiveDocumentId: (result.user as any)?.lastActiveDocumentId,
         lastActiveComparisonId: (result.user as any)?.lastActiveComparisonId,
+        hasCompletedTour: (result.user as any)?.hasCompletedTour ?? false,
+        hasCompletedPopulatedTour: (result.user as any)?.hasCompletedPopulatedTour ?? false,
+        hasCompletedLibraryTour: (result.user as any)?.hasCompletedLibraryTour ?? false,
+        hasCompletedComparisonTour: (result.user as any)?.hasCompletedComparisonTour ?? false,
       }
     })
   } catch (error) {
@@ -55,6 +59,10 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
         role: result.user?.role ?? 'user',   // ← added
         lastActiveDocumentId: (result.user as any)?.lastActiveDocumentId,
         lastActiveComparisonId: (result.user as any)?.lastActiveComparisonId,
+        hasCompletedTour: (result.user as any)?.hasCompletedTour ?? false,
+        hasCompletedPopulatedTour: (result.user as any)?.hasCompletedPopulatedTour ?? false,
+        hasCompletedLibraryTour: (result.user as any)?.hasCompletedLibraryTour ?? false,
+        hasCompletedComparisonTour: (result.user as any)?.hasCompletedComparisonTour ?? false,
       }
     })
   } catch (error) {

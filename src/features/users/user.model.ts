@@ -13,6 +13,10 @@ export interface IUser extends Document {
   resetPasswordToken?: string
   resetPasswordExpires?: Date
   isSuspended?: boolean            // ← added (needed by admin suspend endpoint)
+  hasCompletedTour?: boolean
+  hasCompletedPopulatedTour?: boolean
+  hasCompletedLibraryTour?: boolean
+  hasCompletedComparisonTour?: boolean
   theme?: 'light' | 'dark' | 'system'
   notificationsEnabled?: boolean
   language?: string
@@ -67,6 +71,10 @@ const userSchema = new Schema<IUser>(
       enum: ['monthly', 'annual'],
       default: 'monthly'
     },
+    hasCompletedTour: { type: Boolean, default: false },
+    hasCompletedPopulatedTour: { type: Boolean, default: false },
+    hasCompletedLibraryTour: { type: Boolean, default: false },
+    hasCompletedComparisonTour: { type: Boolean, default: false },
     theme: {
       type: String,
       enum: ['light', 'dark', 'system'],
@@ -79,8 +87,8 @@ const userSchema = new Schema<IUser>(
     language: {
       type: String,
       default: 'en'
-    },  
-    lastActiveDocumentId: { type: Schema.Types.Mixed, required: false } , // Can be ObjectId or string (for legacy data)
+    },
+    lastActiveDocumentId: { type: Schema.Types.Mixed, required: false }, // Can be ObjectId or string (for legacy data)
     lastActiveComparisonId: { type: Schema.Types.ObjectId, ref: 'ComparisonRecord', required: false },
     resetPasswordToken: { type: String, required: false },
     resetPasswordExpires: { type: Date, required: false },

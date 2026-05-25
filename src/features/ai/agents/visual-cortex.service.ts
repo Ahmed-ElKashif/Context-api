@@ -10,7 +10,7 @@ const defaultPrimaryVisionModel = new ChatOpenAI({
   configuration: {
     baseURL: 'https://api.groq.com/openai/v1'
   },
-  model: process.env.GROQ_VIRTUAL_CORTEX_MODEL || 'llama-3.2-11b-vision-preview',
+  model: process.env.GROQ_VIRTUAL_CORTEX_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct',
   temperature: 0.1,
   maxRetries: 1 // Fail fast — if Groq hiccups, jump to OpenAI immediately
 })
@@ -74,7 +74,10 @@ export class VisualCortexService {
     try {
       console.log(`[Visual Cortex] Attempt 1: Sending image to Groq Llama Vision...`)
 
-      const response = await this._primary.invoke([message])
+      // ⏱️ 30s deadline: vision models have a fixed encoding overhead (decode,
+      // patch attention) before token generation even starts. Dense-text images
+      // (scanned A4 pages) can legitimately need 20-30s. 15s was too aggressive.
+      const response = await this._primary.withConfig({ timeout: 30_000 }).invoke([message])
       return (response.content as string).trim()
     } catch (primaryError) {
       console.warn(`[Visual Cortex] ⚠️ Groq Vision failed. Triggering gpt-4o-mini fallback...`)
@@ -89,7 +92,9 @@ export class VisualCortexService {
       try {
         console.log(`[Visual Cortex] Attempt 2: Sending image to OpenAI gpt-4o-mini...`)
 
-        const fallbackResponse = await this._fallback.invoke([message])
+        // ⏱️ 40s deadline: GPT-4o-mini vision is the final safety net. Dense-text
+        // images can require significant generation time — 40s matches AWS/Azure OCR SLAs.
+        const fallbackResponse = await this._fallback.withConfig({ timeout: 40_000 }).invoke([message])
         return (fallbackResponse.content as string).trim()
       } catch (fallbackError) {
         console.error(`[Visual Cortex] 🚨 FATAL: Both Groq and OpenAI Vision models failed.`)

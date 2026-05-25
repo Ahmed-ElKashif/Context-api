@@ -2,9 +2,13 @@ import mongoose from 'mongoose'
 import Folder, { IFolder } from './folder.model'
 import { DocumentModel, IDocument } from '../documents/document.model'
 import { configureCloudinary } from '../../config/cloudinary'
-import { EmbeddingService } from '../ai/vector.service'
+import { EmbeddingService } from '../ai/search/vector.service'
 import archiver from 'archiver'
+const { ZipArchive } = require('archiver') as { ZipArchive: new (opts?: object) => archiver.Archiver }
 import axios from 'axios'
+import { ChatMessageModel } from '../ai/models/chat.model'
+import { ComparisonRecordModel } from '../comparison/comparison-record.model'
+import { ComparisonMessageModel } from '../comparison/comparison-chat.model'
 
 const cloudinary = configureCloudinary()
 
@@ -24,23 +28,36 @@ export class FolderService {
     name: string,
     parentFolderId?: string
   ): Promise<{ folder?: IFolder; error?: string }> {
-    const existingFolder = await Folder.findOne({
-      name,
-      user: userId,
-      parentFolder: parentFolderId || null
-    })
+    let finalName = name;
+    
+    // Prevent overriding the system reserved "Random Files"
+    if (finalName.trim().toLowerCase() === 'random files') {
+      let counter = 1;
+      finalName = `Random Files(${counter})`;
+      let collision = await Folder.findOne({ name: finalName, user: userId, parentFolder: parentFolderId || null });
+      while (collision) {
+        counter++;
+        finalName = `Random Files(${counter})`;
+        collision = await Folder.findOne({ name: finalName, user: userId, parentFolder: parentFolderId || null });
+      }
+    } else {
+      const existingFolder = await Folder.findOne({
+        name: finalName,
+        user: userId,
+        parentFolder: parentFolderId || null
+      });
+      if (existingFolder) return { error: 'A folder with this name already exists here.' };
+    }
 
-    if (existingFolder) return { error: 'A folder with this name already exists here.' }
-
-    let newPath = name
+    let newPath = finalName
     if (parentFolderId) {
       const parent = await Folder.findById(parentFolderId)
       if (!parent) return { error: 'Parent folder not found.' }
-      newPath = `${parent.path}/${name}`
+      newPath = `${parent.path}/${finalName}`
     }
 
     const folder = await Folder.create({
-      name,
+      name: finalName,
       user: userId,
       parentFolder: parentFolderId || null,
       path: newPath
@@ -67,13 +84,31 @@ export class FolderService {
     totalDocuments: number
   }> {
     let docQuery: any = { user: userId }
-    if (!search && !tags) docQuery.folder = targetFolderId
-    if (search)
-      docQuery.$or = [
-        { title: { $regex: search, $options: 'i' } },
-        { tags: { $regex: search, $options: 'i' } }
-      ]
-    if (tags) docQuery.tags = tags
+    if (search || tags) {
+      if (targetFolderId) {
+        const currentFolderData = await Folder.findById(targetFolderId)
+        if (currentFolderData) {
+          const escapedPath = currentFolderData.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          const subfolders = await Folder.find({
+            user: userId,
+            path: { $regex: `^${escapedPath}(/|$)` }
+          })
+          docQuery.folder = { $in: subfolders.map((f) => f._id) }
+        } else {
+          docQuery.folder = targetFolderId
+        }
+      }
+      
+      if (search) {
+        docQuery.$or = [
+          { title: { $regex: search, $options: 'i' } },
+          { tags: { $regex: search, $options: 'i' } }
+        ]
+      }
+      if (tags) docQuery.tags = tags
+    } else {
+      docQuery.folder = targetFolderId
+    }
 
     const folderQuery = { user: userId, parentFolder: targetFolderId }
     const folderCount = !search && !tags ? await Folder.countDocuments(folderQuery) : 0
@@ -151,17 +186,29 @@ export class FolderService {
     const folder = await Folder.findOne({ _id: folderId, user: userId })
     if (!folder) return { error: 'Folder not found.' }
 
-    const collision = await Folder.findOne({
-      name: newName,
-      parentFolder: folder.parentFolder,
-      user: userId
-    })
+    let finalNewName = newName;
+    if (finalNewName.trim().toLowerCase() === 'random files') {
+      let counter = 1;
+      finalNewName = `Random Files(${counter})`;
+      let collision = await Folder.findOne({ name: finalNewName, user: userId, parentFolder: folder.parentFolder });
+      while (collision && collision._id.toString() !== folderId) {
+        counter++;
+        finalNewName = `Random Files(${counter})`;
+        collision = await Folder.findOne({ name: finalNewName, user: userId, parentFolder: folder.parentFolder });
+      }
+    } else {
+      const collision = await Folder.findOne({
+        name: finalNewName,
+        parentFolder: folder.parentFolder,
+        user: userId
+      })
 
-    if (collision) return { error: 'Name already in use in this destination.' }
+      if (collision) return { error: 'Name already in use in this destination.' }
+    }
 
     const oldName = folder.name
-    folder.name = newName
-    folder.path = folder.path.replace(new RegExp(`${oldName}$`), newName)
+    folder.name = finalNewName
+    folder.path = folder.path.replace(new RegExp(`${oldName}$`), finalNewName)
     folder.updatedAt = new Date()
 
     await folder.save()
@@ -203,6 +250,20 @@ export class FolderService {
     const docIdsToDelete = documentsToDelete.map((doc) => doc._id.toString())
     if (docIdsToDelete.length > 0) {
       await EmbeddingService.deleteDocumentChunks(docIdsToDelete, userId)
+
+      // 🗑️ Delete associated chat history
+      await ChatMessageModel.deleteMany({ documentId: { $in: docIdsToDelete }, user: userId })
+
+      // 🗑️ Cascade delete any comparison records referencing these documents
+      const comparisons = await ComparisonRecordModel.find({ 
+        user: userId, 
+        $or: [{ docIdA: { $in: docIdsToDelete } }, { docIdB: { $in: docIdsToDelete } }] 
+      })
+      if (comparisons.length > 0) {
+        const compIds = comparisons.map(c => c._id)
+        await ComparisonRecordModel.deleteMany({ _id: { $in: compIds } })
+        await ComparisonMessageModel.deleteMany({ user: userId, $or: [{ docIdA: { $in: docIdsToDelete } }, { docIdB: { $in: docIdsToDelete } }] })
+      }
     }
 
     await DocumentModel.deleteMany({ user: userId, folder: { $in: folderIdsToDelete } })
@@ -262,26 +323,34 @@ export class FolderService {
 
     // 4. Stream documents into the archive
     for (const doc of documents) {
-      if (!doc.cloudinaryUrl) continue
-
       // Calculate relative internal ZIP path
       const fullFolderPath = folderPathMap.get(doc.folder!.toString()) || rootFolder.name
       const relativeFolderPath = fullFolderPath.substring(prefixToRemoveLength)
 
       // Ensure file has an extension (Cloudinary sometimes strips it, but users need it to open the file)
       let fileName = doc.title
-      if (!fileName.includes('.')) {
-        const extMap: Record<string, string> = {
-          PDF: '.pdf',
-          Word: '.docx',
-          Image: '.jpg',
-          Excel: '.xlsx',
-          TextSnippet: '.txt'
-        }
-        fileName += extMap[doc.fileType] || ''
+      const extMap: Record<string, string> = {
+        PDF: '.pdf',
+        Word: '.docx',
+        Image: '.jpg',
+        Excel: '.xlsx',
+        TextSnippet: '.txt'
+      }
+      const extension = extMap[doc.fileType] || ''
+      if (extension && !fileName.toLowerCase().endsWith(extension.toLowerCase())) {
+        fileName += extension
       }
 
       const zipFilePath = `${relativeFolderPath}/${fileName}`
+
+      // Handle TextSnippets directly since they don't have a Cloudinary URL
+      if (doc.fileType === 'TextSnippet') {
+        const content = doc.extractedText || ''
+        archive.append(content, { name: zipFilePath })
+        continue
+      }
+
+      if (!doc.cloudinaryUrl) continue
 
       try {
         // 🚀 THE MAGIC: Stream the file directly from Cloudinary into the ZIP
@@ -292,7 +361,11 @@ export class FolderService {
           responseType: 'stream'
         })
 
-        archive.append(response.data, { name: zipFilePath })
+        await new Promise<void>((resolve, reject) => {
+          archive.append(response.data, { name: zipFilePath })
+          response.data.on('end', () => resolve())
+          response.data.on('error', (err: any) => reject(err))
+        })
       } catch (err) {
         console.error(`[ZIP Export] Failed to stream ${doc.title}:`, err)
         archive.append(`Failed to download this file from the server.`, {

@@ -1,19 +1,14 @@
 import { DocumentModel, IDocument } from './document.model'
 import Folder from '../folders/folder.model'
+import { User } from '../users/user.model'
 import { configureCloudinary } from '../../config/cloudinary'
-import { ChatOpenAI } from '@langchain/openai'
-import { BaseChatModel } from '@langchain/core/language_models/chat_models'
-import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages'
-import { ChatMessageModel } from '../ai/chat.model'
-import { EmbeddingService } from '../ai/vector.service'
-import mongoose from 'mongoose'
+import { EmbeddingService } from '../ai/search/vector.service'
 import { AppError } from '../../core/errors/AppError'
+import { ChatMessageModel } from '../ai/models/chat.model'
+import { ComparisonRecordModel } from '../comparison/comparison-record.model'
+import { ComparisonMessageModel } from '../comparison/comparison-chat.model'
 
 const cloudinary = configureCloudinary()
-
-// ─── Module-level default (production) ──────────────────────────────────────
-// Instantiated once per process — never inside a method.
-const defaultChatModel = new ChatOpenAI({ model: 'gpt-4o-mini', temperature: 0.2 })
 
 /**
  * Cloudinary stores images and PDFs under the 'image' resource type when uploaded with 'auto'.
@@ -25,16 +20,6 @@ const getResourceType = (fileType: string): 'image' | 'raw' => {
 }
 
 export class DocumentService {
-  // ─── Injected Chat Model (injectable for unit tests) ───────────────────────
-  private static _chatModel: BaseChatModel = defaultChatModel
-
-  /**
-   * Injection point — called by ModelRegistry at startup.
-   * In unit tests: DocumentService.init(mockModel as any)
-   */
-  static init(chatModel: BaseChatModel): void {
-    this._chatModel = chatModel
-  }
 
   static async getAll(
     userId: string,
@@ -172,10 +157,30 @@ export class DocumentService {
     // 🗑️ Purge all semantic chunks from Vector Store
     await EmbeddingService.deleteDocumentChunks(docId, userId)
 
+    // 🗑️ Delete associated chat history
+    await ChatMessageModel.deleteMany({ documentId: docId, user: userId })
+
+    // 🗑️ Cascade delete any comparison records referencing this document, plus their chats
+    const comparisons = await ComparisonRecordModel.find({ 
+      user: userId, 
+      $or: [{ docIdA: docId }, { docIdB: docId }] 
+    })
+    if (comparisons.length > 0) {
+      const compIds = comparisons.map(c => c._id)
+      await ComparisonRecordModel.deleteMany({ _id: { $in: compIds } })
+      await ComparisonMessageModel.deleteMany({ user: userId, $or: [{ docIdA: docId }, { docIdB: docId }] })
+    }
+
     // 🛠️ THE FIX 3: Update the parent folder's timestamp when a document is deleted!
     if (folderId) {
       await Folder.findByIdAndUpdate(folderId, { updatedAt: new Date() })
     }
+
+    // 🛠️ THE FIX: Clear lastActiveDocumentId if it matches the deleted document
+    await User.updateOne(
+      { _id: userId, lastActiveDocumentId: docId },
+      { $unset: { lastActiveDocumentId: "" } }
+    )
 
     return true
   }
@@ -206,6 +211,20 @@ export class DocumentService {
     // 🗑️ Purge all semantic chunks from Vector Store
     await EmbeddingService.deleteDocumentChunks(ids, userId)
 
+    // 🗑️ Delete associated chat history
+    await ChatMessageModel.deleteMany({ documentId: { $in: ids }, user: userId })
+
+    // 🗑️ Cascade delete any comparison records referencing these documents
+    const comparisons = await ComparisonRecordModel.find({ 
+      user: userId, 
+      $or: [{ docIdA: { $in: ids } }, { docIdB: { $in: ids } }] 
+    })
+    if (comparisons.length > 0) {
+      const compIds = comparisons.map(c => c._id)
+      await ComparisonRecordModel.deleteMany({ _id: { $in: compIds } })
+      await ComparisonMessageModel.deleteMany({ user: userId, $or: [{ docIdA: { $in: ids } }, { docIdB: { $in: ids } }] })
+    }
+
     // 🛠️ THE FIX 4: Update timestamps for all affected folders at once!
     if (folderIdsToUpdate.length > 0) {
       await Folder.updateMany(
@@ -213,6 +232,12 @@ export class DocumentService {
         { $set: { updatedAt: new Date() } }
       )
     }
+
+    // 🛠️ THE FIX: Clear lastActiveDocumentId if any of the deleted documents were active
+    await User.updateOne(
+      { _id: userId, lastActiveDocumentId: { $in: ids } },
+      { $unset: { lastActiveDocumentId: "" } }
+    )
 
     return result
   }
@@ -230,82 +255,9 @@ export class DocumentService {
     return document.cloudinaryUrl
   }
 
-  /**
-   * Fetches the chat history for a specific document and user
-   */
-  static async getDocumentChatHistory(documentId: string, userId: string) {
-    return await ChatMessageModel.find({ documentId, user: userId })
-      .sort({ createdAt: 1 }) // Ascending order for frontend UIs
-      .select('role content createdAt -_id')
-      .exec()
-  }
-
-  /**
-   * Performs a vector search and generates an AI response
-   */
-  static async chatWithDocument(
-    documentId: string,
-    userId: string,
-    query: string
-  ): Promise<string> {
-    const llm = this._chatModel // ← uses injected singleton, never constructs inline
-    const vectorStore = await EmbeddingService.getVectorStore()
-
-    // 1. Retrieve Context
-    const retriever = vectorStore.asRetriever({
-      k: 5,
-      filter: {
-        preFilter: {
-          // 🛠️ THE FIX: Cast the strings back to MongoDB ObjectIds!
-          documentId: { $eq: new mongoose.Types.ObjectId(documentId) },
-          userId: { $eq: new mongoose.Types.ObjectId(userId) }
-        }
-      }
-    })
-
-    const relevantChunks = await retriever.invoke(query)
-    const contextText = relevantChunks.map((chunk) => chunk.pageContent).join('\n\n---\n\n')
-
-    if (!contextText) {
-      return "I couldn't find any relevant information in this document to answer your question."
-    }
-
-    // 2. Fetch recent conversation memory
-    const history = await ChatMessageModel.find({ documentId, user: userId })
-      .sort({ createdAt: -1 })
-      .limit(5)
-      .exec()
-
-    const formattedHistory = history
-      .reverse()
-      .map((msg) =>
-        msg.role === 'user' ? new HumanMessage(msg.content) : new AIMessage(msg.content)
-      )
-
-    // 3. Generate Answer
-    const systemPrompt = new SystemMessage(`
-      You are an insightful and collaborative AI thought partner.
-      Your goal is to help the user understand, analyze, and brainstorm based on the provided document context.
-
-      RULES FOR ENGAGEMENT:
-      1. Grounding: Use the provided context as the absolute foundation for your factual answers.
-      2. Synthesis & Brainstorming: You are encouraged to help the user connect ideas, draw logical conclusions, or brainstorm extensions of the document's concepts. 
-      3. Missing Information: If the user asks for a hard fact that is NOT in the context, explicitly state: "The document does not mention this." 
-      4. General Knowledge: If the document lacks a fact, you MAY use your general knowledge to help explain a concept, but you MUST clearly distinguish what is from the document versus what is from your general knowledge.
-
-      DOCUMENT CONTEXT:
-      ${contextText}
-    `)
-
-    const response = await llm.invoke([systemPrompt, ...formattedHistory, new HumanMessage(query)])
-    const aiResponseText = (response.content as string).trim()
-
-    // 4. Save to Database
-    await ChatMessageModel.insertMany([
-      { documentId, user: userId, role: 'user', content: query }, // 🛠️ Fixed
-      { documentId, user: userId, role: 'assistant', content: aiResponseText } // 🛠️ Fixed
-    ])
-
-    return aiResponseText
+  // 9. Get document statuses
+  static async getStatuses(userId: string, ids: string[]) {
+    return await DocumentModel.find({ _id: { $in: ids }, user: userId })
+      .select('_id title aiStatus tags cognitiveLoad summary')
   }
 }

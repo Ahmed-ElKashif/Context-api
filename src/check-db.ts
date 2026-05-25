@@ -1,6 +1,6 @@
 import 'dotenv/config'
 import mongoose from 'mongoose'
-import { TokenBudgetModel } from './features/ai/token-budget.model'
+import { TokenBudgetModel } from './features/ai/models/token-budget.model'
 import { User } from './features/users/user.model'
 
 async function run() {

@@ -1,4 +1,4 @@
-import { TokenBudgetModel } from '../../features/ai/token-budget.model'
+import { TokenBudgetModel } from '../../features/ai/models/token-budget.model'
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -8,6 +8,7 @@ import { TokenBudgetModel } from '../../features/ai/token-budget.model'
  * Industry standard for dev/team environments to control costs.
  */
 export const DAILY_TOKEN_BUDGET = parseInt(process.env.AI_DAILY_TOKEN_BUDGET || '50000', 10)
+export const MONTHLY_TOKEN_BUDGET = parseInt(process.env.AI_MONTHLY_TOKEN_BUDGET || (DAILY_TOKEN_BUDGET * 30).toString(), 10)
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -81,7 +82,7 @@ export class TokenBudgetService {
   static async checkBudget(userId: string): Promise<BudgetStatus> {
     const today = getTodayKey()
     const resetAt = getResetTime()
-    const monthlyLimit = parseInt(process.env.AI_MONTHLY_TOKEN_BUDGET || '1500000', 10)
+    const monthlyLimit = MONTHLY_TOKEN_BUDGET
 
     try {
       const record = await TokenBudgetModel.findOne({ userId, date: today })

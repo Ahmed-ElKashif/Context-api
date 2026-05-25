@@ -2,8 +2,8 @@ import { ChatOpenAI } from '@langchain/openai'
 import { BaseChatModel } from '@langchain/core/language_models/chat_models'
 import { SystemMessage, HumanMessage } from '@langchain/core/messages'
 import { z } from 'zod'
-import { DocumentModel } from '../documents/document.model'
-import { AppError } from '../../core/errors/AppError'
+import { DocumentModel } from '../../documents/document.model'
+import { AppError } from '../../../core/errors/AppError'
 
 // ─── Output Schemas (Zod) ────────────────────────────────────────────────────
 
@@ -170,6 +170,7 @@ export class FolderProposerService {
       6. Maximum 8 top-level folders. Merge small groups (1–2 docs) under a "Miscellaneous" folder.
       7. Write a clear, one-sentence reason for each folder and subfolder.
       8. Use the exact document IDs from the input — do not invent or modify them.
+      9. CRITICAL: NEVER name any folder or subfolder "Random Files" or anything similar. This exact name is strictly reserved for system operations.
     `)
 
     const humanMessage = new HumanMessage(
@@ -179,7 +180,9 @@ export class FolderProposerService {
     // ── 5. Invoke and return ───────────────────────────────────────────────
     console.log(`[FolderProposer] Clustering ${docs.length} documents into semantic folders...`)
 
-    const result = await llm.invoke([systemMessage, humanMessage])
+    // ⏱️ 60s deadline: this sends up to 100 document summaries in a single call —
+    // the most expensive prompt in the system. Still enforce a ceiling.
+    const result = await llm.withConfig({ timeout: 60_000 }).invoke([systemMessage, humanMessage])
 
     console.log(
       `[FolderProposer] Proposed ${result.folders.length} top-level folders for ${docs.length} documents.`

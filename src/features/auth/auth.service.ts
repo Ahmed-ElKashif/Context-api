@@ -70,6 +70,7 @@ export class AuthService {
       await sendResetPasswordEmail(user.email, resetToken)
       return { success: true }
     } catch (err) {
+      console.error('[AuthService] Failed to send password reset email:', err)
       user.resetPasswordToken = undefined
       user.resetPasswordExpires = undefined
       await user.save()

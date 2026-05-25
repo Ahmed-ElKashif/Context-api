@@ -1,4 +1,4 @@
-import { CognitiveLoadService } from '../cognitive-load.service'
+import { CognitiveLoadService } from '../agents/cognitive-load.service'
 
 // ─── Mock: inject a Runnable (already withStructuredOutput-wrapped) ───────────
 // CognitiveLoadService.init() accepts a pre-wrapped Runnable — plain object is fine.

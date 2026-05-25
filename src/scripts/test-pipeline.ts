@@ -1,7 +1,7 @@
 import dotenv from 'dotenv'
 import mongoose from 'mongoose'
-import { OrchestratorService } from '../features/ai/orchestrator.service'
-import { EmbeddingService } from '../features/ai/vector.service'
+import { OrchestratorService } from '../features/ai/agents/orchestrator.service'
+import { EmbeddingService } from '../features/ai/search/vector.service'
 import { ModelRegistry } from '../config/models.registry'
 
 // 1. Strict pattern for environment variable access

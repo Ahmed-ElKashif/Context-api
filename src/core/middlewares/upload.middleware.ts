@@ -34,10 +34,22 @@ const fileFilter = (req: any, file: Express.Multer.File, cb: multer.FileFilterCa
 
 // Files are held in memory as a Buffer and streamed directly to Cloudinary.
 // Nothing is ever written to disk.
+//
+// FILE SIZE LIMIT:
+// The AI layer (DocumentPreviewService) caps all content at 80k chars before
+// passing it to any LLM, so there is no longer an AI-driven reason to restrict
+// file sizes here. The limit below is driven purely by the Cloudinary plan:
+//
+//   Free plan  →  10 MB  (active)
+//   Paid plan  →  50 MB  (realistic ceiling across all supported types:
+//                          PDF ≤ 50 MB, Excel ≤ 50 MB, Word ≤ 25 MB, Image ≤ 25 MB)
+//
+// To upgrade: comment out the 10 MB line and uncomment the 50 MB line.
 export const uploadMemory = multer({
   storage: multer.memoryStorage(),
   fileFilter,
   limits: {
-    fileSize: 10 * 1024 * 1024 // 10 MB
+    fileSize: 10 * 1024 * 1024  // 10 MB  — Cloudinary free plan
+    // fileSize: 50 * 1024 * 1024 // 50 MB  — uncomment when upgrading Cloudinary plan
   }
 })

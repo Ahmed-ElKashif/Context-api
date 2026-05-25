@@ -51,6 +51,10 @@ export const getUserProfile = async (
         lastActiveComparisonId: (user as any).lastActiveComparisonId,
         planId: user.planId || 'sandbox',
         billingCycle: user.billingCycle || 'monthly',
+        hasCompletedTour: (user as any).hasCompletedTour ?? false,
+        hasCompletedPopulatedTour: (user as any).hasCompletedPopulatedTour ?? false,
+        hasCompletedLibraryTour: (user as any).hasCompletedLibraryTour ?? false,
+        hasCompletedComparisonTour: (user as any).hasCompletedComparisonTour ?? false,
         createdAt: user.createdAt
       }
     })
@@ -87,6 +91,10 @@ export const updateUserProfile = async (
         lastActiveComparisonId: (result.user as any)?.lastActiveComparisonId,
         planId: result.user?.planId || 'sandbox',
         billingCycle: result.user?.billingCycle || 'monthly',
+        hasCompletedTour: (result.user as any)?.hasCompletedTour ?? false,
+        hasCompletedPopulatedTour: (result.user as any)?.hasCompletedPopulatedTour ?? false,
+        hasCompletedLibraryTour: (result.user as any)?.hasCompletedLibraryTour ?? false,
+        hasCompletedComparisonTour: (result.user as any)?.hasCompletedComparisonTour ?? false,
         createdAt: result.user?.createdAt
       }
     })
@@ -134,19 +142,21 @@ export const uploadUserAvatar = async (
       }
     }
 
-    res.status(200).json({ success: true, data: {
-      id: user._id,
-      fullName: user.fullName,
-      username: user.username,
-      email: user.email,
-      avatar: user.avatar,
-      persona: user.persona,
-      lastActiveDocumentId: (user as any).lastActiveDocumentId,
-      lastActiveComparisonId: (user as any).lastActiveComparisonId,
-      planId: user.planId || 'sandbox',
-      billingCycle: user.billingCycle || 'monthly',
-      createdAt: user.createdAt
-    }})
+    res.status(200).json({
+      success: true, data: {
+        id: user._id,
+        fullName: user.fullName,
+        username: user.username,
+        email: user.email,
+        avatar: user.avatar,
+        persona: user.persona,
+        lastActiveDocumentId: (user as any).lastActiveDocumentId,
+        lastActiveComparisonId: (user as any).lastActiveComparisonId,
+        planId: user.planId || 'sandbox',
+        billingCycle: user.billingCycle || 'monthly',
+        createdAt: user.createdAt
+      }
+    })
   } catch (error) {
     next(error)
   }
