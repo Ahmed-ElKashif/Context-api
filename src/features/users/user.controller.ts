@@ -49,6 +49,8 @@ export const getUserProfile = async (
         persona: user.persona,
         lastActiveDocumentId: (user as any).lastActiveDocumentId,
         lastActiveComparisonId: (user as any).lastActiveComparisonId,
+        planId: user.planId || 'sandbox',
+        billingCycle: user.billingCycle || 'monthly',
         createdAt: user.createdAt
       }
     })
@@ -83,6 +85,8 @@ export const updateUserProfile = async (
         persona: result.user?.persona,
         lastActiveDocumentId: (result.user as any)?.lastActiveDocumentId,
         lastActiveComparisonId: (result.user as any)?.lastActiveComparisonId,
+        planId: result.user?.planId || 'sandbox',
+        billingCycle: result.user?.billingCycle || 'monthly',
         createdAt: result.user?.createdAt
       }
     })
@@ -139,6 +143,8 @@ export const uploadUserAvatar = async (
       persona: user.persona,
       lastActiveDocumentId: (user as any).lastActiveDocumentId,
       lastActiveComparisonId: (user as any).lastActiveComparisonId,
+      planId: user.planId || 'sandbox',
+      billingCycle: user.billingCycle || 'monthly',
       createdAt: user.createdAt
     }})
   } catch (error) {

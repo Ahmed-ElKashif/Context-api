@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { protect } from '../../core/middlewares/auth.middleware'
 import { requireAdmin } from '../../core/middlewares/requireAdmin.middleware'
 import { adminController } from './admin.controller'
+import { paymentController } from '../payments/payment.controller'
 
 const router = Router()
 
@@ -25,5 +26,11 @@ router.get('/ai-usage', adminController.getAIUsage)
 
 // GET  /api/admin/ai-usage/user/:userId → Per-user AI usage history
 router.get('/ai-usage/user/:userId', adminController.getUserAIUsage)
+
+// GET  /api/admin/payments            → Paginated payment requests
+router.get('/payments', paymentController.getRequests)
+
+// PATCH /api/admin/payments/:id/status → Approve / reject a payment request
+router.patch('/payments/:id/status', paymentController.updateStatus)
 
 export default router

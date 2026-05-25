@@ -19,6 +19,8 @@ export interface IUser extends Document {
   lastActiveDocumentId?: mongoose.Types.ObjectId | string
   lastActiveComparisonId?: mongoose.Types.ObjectId | string
   files?: IDocument[]
+  planId?: 'sandbox' | 'startup' | 'growth' | 'embed'
+  billingCycle?: 'monthly' | 'annual'
   createdAt: Date
   updatedAt: Date
 }
@@ -55,6 +57,16 @@ const userSchema = new Schema<IUser>(
     avatar: { type: String, required: false },
     avatarPublicId: { type: String, required: false },
     isSuspended: { type: Boolean, default: false },
+    planId: {
+      type: String,
+      enum: ['sandbox', 'startup', 'growth', 'embed'],
+      default: 'sandbox'
+    },
+    billingCycle: {
+      type: String,
+      enum: ['monthly', 'annual'],
+      default: 'monthly'
+    },
     theme: {
       type: String,
       enum: ['light', 'dark', 'system'],
