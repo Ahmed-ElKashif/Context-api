@@ -23,6 +23,8 @@ export interface IUser extends Document {
   lastActiveDocumentId?: mongoose.Types.ObjectId | string
   lastActiveComparisonId?: mongoose.Types.ObjectId | string
   files?: IDocument[]
+  planId?: 'sandbox' | 'startup' | 'growth' | 'embed'
+  billingCycle?: 'monthly' | 'annual'
   createdAt: Date
   updatedAt: Date
 }
@@ -59,6 +61,16 @@ const userSchema = new Schema<IUser>(
     avatar: { type: String, required: false },
     avatarPublicId: { type: String, required: false },
     isSuspended: { type: Boolean, default: false },
+    planId: {
+      type: String,
+      enum: ['sandbox', 'startup', 'growth', 'embed'],
+      default: 'sandbox'
+    },
+    billingCycle: {
+      type: String,
+      enum: ['monthly', 'annual'],
+      default: 'monthly'
+    },
     hasCompletedTour: { type: Boolean, default: false },
     hasCompletedPopulatedTour: { type: Boolean, default: false },
     hasCompletedLibraryTour: { type: Boolean, default: false },
@@ -75,8 +87,8 @@ const userSchema = new Schema<IUser>(
     language: {
       type: String,
       default: 'en'
-    },  
-    lastActiveDocumentId: { type: Schema.Types.Mixed, required: false } , // Can be ObjectId or string (for legacy data)
+    },
+    lastActiveDocumentId: { type: Schema.Types.Mixed, required: false }, // Can be ObjectId or string (for legacy data)
     lastActiveComparisonId: { type: Schema.Types.ObjectId, ref: 'ComparisonRecord', required: false },
     resetPasswordToken: { type: String, required: false },
     resetPasswordExpires: { type: Date, required: false },

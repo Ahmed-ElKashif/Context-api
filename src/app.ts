@@ -16,6 +16,7 @@ import aiRoutes from './features/ai/ai.routes'
 import folderRoutes from './features/folders/folder.routes'
 import comparisonRoutes from './features/comparison/comparison.routes'
 import settingsRoutes from './features/settings/settings.routes'
+import paymentRoutes from './features/payments/payment.routes'
 
 import { analyticsMiddleware } from './core/middlewares/analytics.middleware'
 import analyticsRoutes from './features/analytics/analytics.routes'
@@ -90,6 +91,7 @@ app.get('/api/health', (req: Request, res: Response) => {
 app.use('/api/auth', authRoutes)
 app.use('/api/users', userRoutes)
 app.use('/api/settings', settingsRoutes)
+app.use('/api/payments', paymentRoutes)
 app.use('/api/documents', documentRoutes)
 app.use('/api/ai', aiRoutes)
 app.use('/api/folders', folderRoutes)
