@@ -141,6 +141,7 @@ export class ComparisonService {
       3. Clarity: When citing details, try to clarify if the detail belongs to one document or the other based on the context.
       4. Missing Information: If the user asks for a hard fact that is NOT in the context, explicitly state: "These documents do not mention this."
       5. General Knowledge: If the documents lack a fact, you MAY use your general knowledge to help explain a concept, but you MUST clearly distinguish what is from the documents versus what is from your general knowledge.
+      6. Language: Detect the language the user is writing in and ALWAYS respond in that same language. If the user types in Arabic, respond in Arabic. Be consistent throughout the conversation.
 
       DUAL-DOCUMENT CONTEXT:
       ${contextText}

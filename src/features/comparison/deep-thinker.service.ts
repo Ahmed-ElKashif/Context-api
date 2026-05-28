@@ -137,6 +137,7 @@ export class DeepThinkerService {
         OUTPUT RULES:
         - Return ONLY a raw JSON object.
         - NO introductory text. NO closing remarks. NO markdown formatting.
+        - LANGUAGE RULE: Detect the primary language of the two documents provided. Write ALL string values in the JSON (synthesis, similarities, differences, uniqueToA, uniqueToB) in that SAME detected language. If both documents are in Arabic, all output strings must be in Arabic.
         - Follow this structure exactly:
         {
           "synthesis": "string (A 2-3 sentence summary explaining the biggest shift between the documents)",
@@ -169,6 +170,7 @@ export class DeepThinkerService {
           You are a high-precision document analyst. 
           You MUST return your analysis in strict JSON format.
           DO NOT include any introductory text, explanations, or code blocks.
+          LANGUAGE RULE: Detect the primary language of the two documents provided. Write ALL string values in the JSON in that SAME detected language. If both documents are in Arabic, all output strings must be in Arabic.
           
           The JSON must follow this exact structure:
           {
@@ -205,6 +207,7 @@ export class DeepThinkerService {
           const lastResortSystemMessage = new SystemMessage(`
             You are a precise document analyst.
             Return ONLY a raw JSON object with no extra text, no markdown, no code blocks.
+            LANGUAGE RULE: Detect the primary language of the two documents provided. Write ALL string values in the JSON in that SAME detected language. If both documents are in Arabic, all output strings must be in Arabic.
             Use this exact structure:
             {
               "synthesis": "string (2-3 sentence summary of how the documents compare)",

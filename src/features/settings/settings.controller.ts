@@ -1,7 +1,6 @@
 import { Request, Response, NextFunction } from 'express'
-import { User } from '../users/user.model'
 import { AppError } from '../../core/errors/AppError'
-import { TokenBudgetService, MONTHLY_TOKEN_BUDGET } from '../../core/services/token-budget.service'
+import { SettingsService } from './settings.service'
 
 // GET /api/settings
 export const getSettings = async (
@@ -13,26 +12,11 @@ export const getSettings = async (
     const userId = req.user?._id?.toString() || (req as any).user?.id
     if (!userId) return next(new AppError('Unauthorized', 401))
 
-    const user = await User.findById(userId)
-    if (!user) return next(new AppError('User not found', 404))
-
-    const budgetStatus = await TokenBudgetService.checkBudget(userId)
-    const monthlyStatus = await TokenBudgetService.getMonthlyUsage(userId)
+    const data = await SettingsService.getSettings(userId)
 
     res.status(200).json({
       success: true,
-      data: {
-        theme: user.theme || 'system',
-        notificationsEnabled: user.notificationsEnabled ?? true,
-        language: user.language || 'en',
-        aiUsage: {
-          tokensUsed: budgetStatus.tokensUsed,
-          dailyLimit: budgetStatus.limit,
-          remaining: budgetStatus.remaining,
-          monthlyUsed: monthlyStatus.tokensUsed,
-          monthlyLimit: MONTHLY_TOKEN_BUDGET
-        }
-      }
+      data
     })
   } catch (error) {
     next(error)
@@ -51,32 +35,11 @@ export const updateSettings = async (
 
     const { theme, notificationsEnabled, language } = req.body
 
-    const user = await User.findById(userId)
-    if (!user) return next(new AppError('User not found', 404))
-
-    if (theme !== undefined) user.theme = theme
-    if (notificationsEnabled !== undefined) user.notificationsEnabled = notificationsEnabled
-    if (language !== undefined) user.language = language
-
-    await user.save()
-
-    const budgetStatus = await TokenBudgetService.checkBudget(userId)
-    const monthlyStatus = await TokenBudgetService.getMonthlyUsage(userId)
+    const data = await SettingsService.updateSettings(userId, { theme, notificationsEnabled, language })
 
     res.status(200).json({
       success: true,
-      data: {
-        theme: user.theme,
-        notificationsEnabled: user.notificationsEnabled,
-        language: user.language,
-        aiUsage: {
-          tokensUsed: budgetStatus.tokensUsed,
-          dailyLimit: budgetStatus.limit,
-          remaining: budgetStatus.remaining,
-          monthlyUsed: monthlyStatus.tokensUsed,
-          monthlyLimit: MONTHLY_TOKEN_BUDGET
-        }
-      }
+      data
     })
   } catch (error) {
     next(error)
@@ -93,31 +56,11 @@ export const resetSettings = async (
     const userId = req.user?._id?.toString() || (req as any).user?.id
     if (!userId) return next(new AppError('Unauthorized', 401))
 
-    const user = await User.findById(userId)
-    if (!user) return next(new AppError('User not found', 404))
-
-    user.theme = 'system'
-    user.notificationsEnabled = true
-    user.language = 'en'
-    await user.save()
-
-    const budgetStatus = await TokenBudgetService.checkBudget(userId)
-    const monthlyStatus = await TokenBudgetService.getMonthlyUsage(userId)
+    const data = await SettingsService.resetSettings(userId)
 
     res.status(200).json({
       success: true,
-      data: {
-        theme: user.theme,
-        notificationsEnabled: user.notificationsEnabled,
-        language: user.language,
-        aiUsage: {
-          tokensUsed: budgetStatus.tokensUsed,
-          dailyLimit: budgetStatus.limit,
-          remaining: budgetStatus.remaining,
-          monthlyUsed: monthlyStatus.tokensUsed,
-          monthlyLimit: MONTHLY_TOKEN_BUDGET
-        }
-      }
+      data
     })
   } catch (error) {
     next(error)
@@ -134,23 +77,11 @@ export const getTokenBudget = async (
     const userId = req.user?._id?.toString() || (req as any).user?.id
     if (!userId) return next(new AppError('Unauthorized', 401))
 
-    const budgetStatus = await TokenBudgetService.checkBudget(userId)
-    const monthlyStatus = await TokenBudgetService.getMonthlyUsage(userId)
+    const data = await SettingsService.getTokenBudget(userId)
 
     res.status(200).json({
       success: true,
-      data: {
-        dailyUsage: {
-          tokensUsed: budgetStatus.tokensUsed,
-          dailyLimit: budgetStatus.limit,
-          remaining: budgetStatus.remaining,
-          resetAt: budgetStatus.resetAt
-        },
-        monthlyUsage: {
-          tokensUsed: monthlyStatus.tokensUsed,
-          requestCount: monthlyStatus.requestCount
-        }
-      }
+      data
     })
   } catch (error) {
     next(error)

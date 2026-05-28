@@ -12,9 +12,10 @@ const mockLimit = jest.fn()
 const mockSort  = jest.fn().mockReturnValue({ limit: mockLimit })
 const mockSelect = jest.fn().mockReturnValue({ sort: mockSort })
 const mockFind   = jest.fn().mockReturnValue({ select: mockSelect })
+const mockExists = jest.fn()
 
 jest.mock('../../documents/document.model', () => ({
-  DocumentModel: { find: mockFind }
+  DocumentModel: { find: mockFind, exists: mockExists }
 }))
 
 import { FolderProposerService } from '../organizer/folder-proposer.service'
@@ -22,7 +23,9 @@ import { FolderProposerService } from '../organizer/folder-proposer.service'
 // ─── Mock model with withStructuredOutput ─────────────────────────────────────
 const mockStructuredInvoke = jest.fn()
 const mockModel = {
-  withStructuredOutput: jest.fn().mockReturnValue({ invoke: mockStructuredInvoke })
+  withStructuredOutput: jest.fn().mockReturnThis(),
+  withConfig: jest.fn().mockReturnThis(),
+  invoke: mockStructuredInvoke
 }
 
 // Sample analyzed documents
@@ -51,6 +54,7 @@ beforeEach(() => {
   mockFind.mockReturnValue({ select: mockSelect })
   mockSelect.mockReturnValue({ sort: mockSort })
   mockSort.mockReturnValue({ limit: mockLimit })
+  mockExists.mockResolvedValue(null)
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -76,7 +80,7 @@ describe('FolderProposerService', () => {
       mockLimit.mockResolvedValueOnce(makeDocs(2))
       mockStructuredInvoke.mockResolvedValueOnce({ folders: sampleTree })
       await FolderProposerService.proposeStructure('user_abc')
-      expect(mockFind).toHaveBeenCalledWith({ user: 'user_abc', aiStatus: 'Analyzed' })
+      expect(mockFind).toHaveBeenCalledWith({ user: 'user_abc', aiStatus: 'Analyzed', isOrganized: false })
     })
 
     it('calls withStructuredOutput() + invoke() and returns the tree', async () => {

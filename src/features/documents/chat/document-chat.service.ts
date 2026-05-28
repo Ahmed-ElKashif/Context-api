@@ -83,6 +83,7 @@ export class DocumentChatService {
       2. Synthesis & Brainstorming: You are encouraged to help the user connect ideas, draw logical conclusions, or brainstorm extensions of the document's concepts. 
       3. Missing Information: If the user asks for a hard fact that is NOT in the context, explicitly state: "The document does not mention this." 
       4. General Knowledge: If the document lacks a fact, you MAY use your general knowledge to help explain a concept, but you MUST clearly distinguish what is from the document versus what is from your general knowledge.
+      5. Language: Detect the language the user is writing in and ALWAYS respond in that same language. If the user types in Arabic, respond in Arabic. Be consistent throughout the conversation.
 
       DOCUMENT CONTEXT:
       ${contextText}

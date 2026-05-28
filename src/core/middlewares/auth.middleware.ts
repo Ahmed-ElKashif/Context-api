@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import mongoose from 'mongoose';
 import { User } from '../../features/users/user.model';
 import { AppError } from '../errors/AppError'; 
 
@@ -15,14 +16,14 @@ export const protect = async (
   try {
     let token;
 
-    // 1. Check if the Authorization header exists or token is in query parameters
+    // 1. Token MUST come from the Authorization: Bearer header only.
+    //    Query-string tokens (?token=...) are NOT accepted — they leak into
+    //    server logs, browser history, and HTTP referrer headers.
     if (
       req.headers.authorization &&
       req.headers.authorization.startsWith('Bearer')
     ) {
       token = req.headers.authorization.split(' ')[1];
-    } else if (req.query && req.query.token) {
-      token = req.query.token as string;
     }
 
     // 2. If no token is found, kick them out
@@ -33,19 +34,24 @@ export const protect = async (
     // 3. Verify the token (Is it real? Has it expired?)
     const decoded = jwt.verify(token, process.env.JWT_SECRET as string) as JwtPayload;
 
-    // 4. Check if the user belonging to this token still exists in the database
+    // 4. Guard against crafted JWT payloads with non-ObjectId id values
+    if (!mongoose.isValidObjectId(decoded.id)) {
+      return next(new AppError('Invalid token payload.', 401));
+    }
+
+    // 5. Check if the user belonging to this token still exists in the database
     const currentUser = await User.findById(decoded.id);
     if (!currentUser) {
       return next(new AppError('The user belonging to this token no longer exists.', 401));
     }
 
-    // 5. Check if the user has been suspended by an admin
+    // 6. Check if the user has been suspended by an admin
     if (currentUser.isSuspended) {
       return next(new AppError('Your account has been suspended. Please contact support.', 403));
     }
 
-    // 6. SUCCESS! Attach the user object to the request.
-    req.user = currentUser; 
+    // 7. SUCCESS! Attach the user object to the request.
+    req.user = currentUser;
     next();
     
   } catch (error) {

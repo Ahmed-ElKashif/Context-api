@@ -16,7 +16,7 @@
 
 <p>
   <img src="https://img.shields.io/badge/Node.js-22.x-339933?style=for-the-badge&logo=node.js&logoColor=white"/>
-  <img src="https://img.shields.io/badge/Express-4.x-000000?style=for-the-badge&logo=express&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Express-5.x-000000?style=for-the-badge&logo=express&logoColor=white"/>
   <img src="https://img.shields.io/badge/TypeScript-5.x-3178C6?style=for-the-badge&logo=typescript&logoColor=white"/>
   <img src="https://img.shields.io/badge/MongoDB-Atlas-47A248?style=for-the-badge&logo=mongodb&logoColor=white"/>
 </p>
@@ -29,16 +29,16 @@
 </p>
 
 <p>
-  <img src="https://img.shields.io/badge/Jest-100%25_Pass_Rate-C21325?style=for-the-badge&logo=jest&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Jest-167_Tests_Passing-C21325?style=for-the-badge&logo=jest&logoColor=white"/>
   <img src="https://img.shields.io/badge/JWT-Auth-FB015B?style=for-the-badge&logo=jsonwebtokens&logoColor=white"/>
   <img src="https://img.shields.io/badge/Token_Budget-50K_tokens%2Fday-4F46E5?style=for-the-badge"/>
 </p>
 
 <br/>
 
-[![OpenAPI Docs](https://img.shields.io/badge/📖_OpenAPI_Spec-docs/openapi.yaml-4F46E5?style=flat-square)](./docs/openapi.yaml)
-[![Postman](https://img.shields.io/badge/🧪_Postman_Collection-Import_Ready-FF6C37?style=flat-square)](./docs/postman/Context%20API.postman_collection.json)
-[![AI Postman](https://img.shields.io/badge/🤖_AI_Endpoints_Collection-Import_Ready-7C3AED?style=flat-square)](./docs/postman/ai-postman-collection.json)
+[![OpenAPI Docs](https://img.shields.io/badge/📖_Public_API_Spec-docs/ContextAPI.yaml-4F46E5?style=flat-square)](./docs/ContextAPI.yaml)
+[![Postman Public](https://img.shields.io/badge/🧪_Public_Postman_Collection-Import_Ready-FF6C37?style=flat-square)](./docs/postman/Context%20API%20(Public).postman_collection.json)
+[![Postman Internal](https://img.shields.io/badge/🔒_Internal_Postman_Collection-Import_Ready-7C3AED?style=flat-square)](./docs/postman/Context%20API%20(Internal).postman_collection.json)
 
 <br/>
 
@@ -60,6 +60,7 @@
 - [Quick Start](#-quick-start)
 - [Environment Variables](#-environment-variables)
 - [API Overview](#-api-overview)
+- [API Documentation](#-api-documentation)
 - [Testing](#-testing)
 - [Brand & Colors](#-brand--colors)
 - [Team & Workflow](#-team--workflow)
@@ -118,7 +119,7 @@ Every document uploaded to Context is automatically processed through a multi-st
 
 - **RAG Chat** — Ask questions, get grounded answers with citation context
 - **Semantic Search** — Natural language search across your entire library
-- **Document Comparison** — Llama 3.3 70B (Groq) deep-diffs two documents
+- **Document Comparison** — Llama 3.3 70B (Groq) deep-diffs two documents with a 3-model fallback chain
 - **Synthesis** — GPT-4o-mini merges multiple document summaries into one narrative
 - **Folder Proposals** — GPT-4o-mini clusters your library into a smart folder tree
 
@@ -195,13 +196,15 @@ HTTP Request
 <details>
 <summary><b>📄 Documents — <code>/api/documents</code></b></summary>
 
-| Method | Route              | Description                                          |
-| ------ | ------------------ | ---------------------------------------------------- |
-| `POST` | `/upload`          | Upload files OR text snippets → triggers AI pipeline |
-| `GET`  | `/`                | Paginated list with sort/filter                      |
-| `GET`  | `/suggested-focus` | 🎯 Top-2 documents ranked by cognitiveLoad + recency + isUnread |
-| `GET`  | `/:id/chat`        | Fetch RAG chat history                               |
-| `POST` | `/:id/chat`        | ⚡ Chat with document (RAG)                          |
+| Method   | Route              | Description                                          |
+| -------- | ------------------ | ---------------------------------------------------- |
+| `POST`   | `/upload`          | Upload files OR text snippets → triggers AI pipeline |
+| `GET`    | `/`                | Paginated list with sort/filter                      |
+| `GET`    | `/:id`             | Get single document by ID                            |
+| `DELETE` | `/:id`             | Delete document and its vector embeddings            |
+| `GET`    | `/suggested-focus` | 🎯 Top-2 documents ranked by cognitiveLoad + recency + isUnread |
+| `GET`    | `/:id/chat`        | Fetch RAG chat history                               |
+| `POST`   | `/:id/chat`        | ⚡ Chat with document (RAG)                          |
 
 > **Deduplication:** SHA-256 fingerprint check prevents re-uploading the same file.
 > **Folder-aware uploads:** Pass `clientPaths` to recreate your original folder structure.
@@ -212,13 +215,14 @@ HTTP Request
 <details>
 <summary><b>📁 Folders — <code>/api/folders</code></b></summary>
 
-| Method   | Route      | Description                                        |
-| -------- | ---------- | -------------------------------------------------- |
-| `GET`    | `/`        | Full folder tree                                   |
-| `POST`   | `/`        | Create folder                                      |
-| `PUT`    | `/:id`     | Rename / move folder                               |
-| `DELETE` | `/:id`     | Delete folder                                      |
-| `POST`   | `/propose` | ⚡ AI proposes a full-library semantic folder tree |
+| Method   | Route         | Description                                        |
+| -------- | ------------- | -------------------------------------------------- |
+| `GET`    | `/tree`       | Full folder tree                                   |
+| `POST`   | `/`           | Create folder                                      |
+| `PUT`    | `/:id`        | Rename / move folder                               |
+| `DELETE` | `/:id`        | Delete folder                                      |
+| `GET`    | `/:id/download` | Download folder contents as ZIP archive          |
+| `POST`   | `/propose`    | ⚡ AI proposes a full-library semantic folder tree |
 
 </details>
 
@@ -239,14 +243,18 @@ HTTP Request
 
 | Method | Route      | Description                                                                        |
 | ------ | ---------- | ---------------------------------------------------------------------------------- |
-| `POST` | `/compare` | ⚡ Deep-compare two documents (Llama 3.3 70B via Groq, falls back to Llama 3.1 8B) |
+| `POST` | `/compare` | ⚡ Deep-compare two documents (Llama 3.3 70B → 8B → GPT-4o-mini fallback chain) |
+| `GET`  | `/chat`    | Fetch dual-document RAG chat history                                              |
+| `POST` | `/chat`    | ⚡ Chat grounded across both documents simultaneously                             |
 
-Returns: `similarities`, `differences`, `uniqueToA`, `uniqueToB`.
+Returns: `synthesis`, `similarityPercentage`, `similarities`, `differences`, `uniqueToA`, `uniqueToB`.
+
+> **Note:** Comparison quality depends on the document having a digital text layer. Scanned/image-based PDFs will return minimal results as `pdf-parse` cannot extract image-only content.
 
 </details>
 
 <details>
-<summary><b>🛡️ Admin — <code>/api/admin</code></b> <em>(admin role required)</em></summary>
+<summary><b>🛡️ Admin — <code>/api/admin</code></b> <em>(admin role required — internal only)</em></summary>
 
 | Method  | Route                | Description                                 |
 | ------- | -------------------- | ------------------------------------------- |
@@ -254,6 +262,7 @@ Returns: `similarities`, `differences`, `uniqueToA`, `uniqueToB`.
 | `GET`   | `/users`             | Paginated + searchable + sortable user list |
 | `PATCH` | `/users/:id/suspend` | Suspend / unsuspend a user                  |
 | `GET`   | `/export/users`      | Download all users as CSV                   |
+| `GET`   | `/ai-usage`          | Per-user AI token consumption report        |
 
 </details>
 
@@ -271,49 +280,86 @@ Returns: `similarities`, `differences`, `uniqueToA`, `uniqueToB`.
 
 </details>
 
+<details>
+<summary><b>💳 Payments — <code>/api/payments</code></b> <em>(internal only)</em></summary>
+
+| Method | Route      | Description                    |
+| ------ | ---------- | ------------------------------ |
+| `POST` | `/request` | Initiate a payment request     |
+| `GET`  | `/history` | Fetch user payment history     |
+
+</details>
+
+<details>
+<summary><b>⚙️ Settings — <code>/api/settings</code></b></summary>
+
+| Method | Route | Description                         |
+| ------ | ----- | ----------------------------------- |
+| `GET`  | `/`   | Fetch user application settings     |
+| `PUT`  | `/`   | Update preferences (theme, persona) |
+
+</details>
+
 ---
 
 ## 🛠️ Tech Stack
 
 ### Core Backend
 
-| Technology           | Version | Purpose                 |
-| -------------------- | ------- | ----------------------- |
-| Node.js              | ≥ 22.x  | Runtime                 |
-| Express              | 4.x     | HTTP framework          |
-| TypeScript           | 5.x     | Type safety             |
-| MongoDB + Mongoose   | 8.x     | Primary database        |
-| JWT (jsonwebtoken)   | 9.x     | Auth tokens             |
-| bcryptjs             | 2.x     | Password hashing        |
-| Multer + Streamifier | —       | In-memory file handling |
-| Cloudinary           | 2.x     | File storage & CDN      |
+| Technology           | Version | Purpose                          |
+| -------------------- | ------- | -------------------------------- |
+| Node.js              | ≥ 22.x  | Runtime                          |
+| Express              | 5.x     | HTTP framework                   |
+| TypeScript           | 5–6.x   | Type safety                      |
+| MongoDB + Mongoose   | 9.x     | Primary database                 |
+| JWT (jsonwebtoken)   | 9.x     | Auth tokens                      |
+| bcryptjs             | 3.x     | Password hashing                 |
+| Multer + Streamifier | 2.x     | In-memory file handling          |
+| Cloudinary           | 2.x     | File storage & CDN               |
+| morgan               | 1.x     | HTTP request logging             |
+| nodemailer           | 8.x     | Transactional email (SMTP)       |
+| archiver             | 8.x     | ZIP archive generation (folders) |
+| mammoth              | 1.x     | Word (.docx) text extraction     |
+| pdf-parse            | 2.x     | PDF digital text extraction      |
+| xlsx                 | 0.18.x  | Excel file parsing               |
+| zod                  | 3.x     | Runtime schema validation        |
 
 ### AI & LangChain
 
-| Technology                      | Purpose                                    |
-| ------------------------------- | ------------------------------------------ |
-| LangChain JS                    | Orchestration & structured output          |
-| OpenAI GPT-4o-mini              | Orchestration, synthesis, folder proposals |
-| OpenAI `text-embedding-3-small` | 1536-dim vector embeddings                 |
-| Groq `llama-3.3-70b-versatile`  | Deep document comparison (primary)         |
-| Groq `llama-3.1-8b-instant`     | Deep document comparison (fallback)        |
-| MongoDB Atlas Vector Search     | Semantic similarity search                 |
+| Technology                      | Purpose                                        |
+| ------------------------------- | ---------------------------------------------- |
+| `langchain` + `@langchain/core` | Orchestration, chains & structured output      |
+| `@langchain/openai`             | GPT-4o-mini (orchestration, synthesis, folders) |
+| `@langchain/groq`               | Llama models (comparison primary + fallback)    |
+| `@langchain/google-genai`       | Google Gemini (available, not primary)          |
+| `@langchain/langgraph`          | LangGraph agent framework (OrchestratorService) |
+| `@langchain/mongodb`            | MongoDB Atlas Vector Store integration          |
+| `@langchain/textsplitters`      | Document chunking before embedding              |
+| `@langchain/community`          | Community integrations & utilities              |
+| OpenAI `text-embedding-3-small` | 1536-dim vector embeddings                      |
+| Groq `llama-3.3-70b-versatile`  | Deep document comparison (primary)              |
+| Groq `llama-3.1-8b-instant`     | Deep document comparison (fallback)             |
+| GPT-4o-mini                     | Deep document comparison (last resort)          |
+| MongoDB Atlas Vector Search     | Semantic similarity search                      |
 
 ### Security & Middleware
 
-| Technology              | Purpose                                |
-| ----------------------- | -------------------------------------- |
-| Helmet                  | HTTP security headers                  |
-| express-rate-limit      | Brute-force protection                 |
-| HPP                     | HTTP parameter pollution guard         |
-| cors                    | Cross-Origin Resource Sharing          |
-| Token Budget Middleware | 50,000 token/day per-user AI spend cap |
+| Technology              | Purpose                                                          |
+| ----------------------- | ---------------------------------------------------------------- |
+| Helmet                  | HTTP security headers                                            |
+| express-rate-limit      | Brute-force protection (global + auth-specific limiters)         |
+| express-mongo-sanitize  | NoSQL injection guard on `req.body` & `req.params`               |
+| HPP                     | HTTP parameter pollution guard                                   |
+| cors                    | Cross-Origin Resource Sharing (origin-locked to frontend URL)    |
+| Token Budget Middleware  | 50,000 token/day per-user AI spend cap with `Retry-After` header |
+
+> **Note:** `express-mongo-sanitize` is applied as a custom wrapper that sanitizes `req.body` and `req.params` only. Express 4.19+ made `req.query` read-only, so direct `mongoSanitize()` middleware would crash the server — the wrapper bypasses this safely.
 
 ### Dev & Testing
 
 | Technology        | Purpose               |
 | ----------------- | --------------------- |
-| Jest + ts-jest    | Unit testing          |
+| Jest + ts-jest    | Unit testing (pure — no live DB or AI calls) |
 | ESLint + Prettier | Code quality          |
 | ts-node-dev       | Hot-reload dev server |
 
@@ -325,10 +371,10 @@ Returns: `similarities`, `differences`, `uniqueToA`, `uniqueToB`.
 context-api/
 │
 ├── 📂 docs/
-│   ├── openapi.yaml                    ← Full OpenAPI 3.0 specification
-│   ├── ai-postman-collection.json      ← AI endpoints Postman collection
+│   ├── ContextAPI.yaml                         ← Public OpenAPI 3.0 spec (BaaS-ready)
 │   └── postman/
-│       └── Context API.postman_collection.json  ← Complete collection
+│       ├── Context API (Public).postman_collection.json   ← Public endpoints only
+│       └── Context API (Internal).postman_collection.json ← All endpoints (dev use)
 │
 ├── 📂 src/
 │   ├── 📂 config/
@@ -343,7 +389,7 @@ context-api/
 │   │   │   ├── auth.middleware.ts       ← JWT protect guard
 │   │   │   ├── requireAdmin.middleware.ts
 │   │   │   ├── token-budget.middleware.ts  ← 50K token/day cap
-│   │   │   ├── ai-logger.middleware.ts
+│   │   │   ├── analytics.middleware.ts ← Auto-tracks all HTTP events
 │   │   │   └── error.middleware.ts     ← Global error handler
 │   │   └── 📂 types/
 │   │       ├── express.d.ts            ← req.user (IUser) augmentation
@@ -361,43 +407,62 @@ context-api/
 │   │   │   └── user.routes.ts
 │   │   ├── 📂 documents/
 │   │   │   ├── document.model.ts
-│   │   │   ├── upload.controller.ts    ← thin HTTP adapter
-│   │   │   ├── upload.service.ts       ← all business logic
+│   │   │   ├── document.service.ts
 │   │   │   ├── document.routes.ts
+│   │   │   ├── 📂 upload/
+│   │   │   │   └── upload.service.ts
+│   │   │   ├── 📂 chat/
+│   │   │   │   └── document-chat.service.ts
+│   │   │   ├── 📂 analysis/
+│   │   │   │   └── suggested-focus.service.ts
 │   │   │   └── __tests__/
-│   │   │       └── upload.service.test.ts
 │   │   ├── 📂 folders/
 │   │   │   ├── folder.model.ts
+│   │   │   ├── folder.service.ts
 │   │   │   ├── folder.controller.ts
 │   │   │   └── folder.routes.ts
 │   │   ├── 📂 ai/
 │   │   │   ├── ai.controller.ts
-│   │   │   ├── ai.service.ts
 │   │   │   ├── ai.routes.ts
-│   │   │   ├── orchestrator.service.ts
-│   │   │   ├── embedding.service.ts
-│   │   │   ├── cognitive-load.service.ts
-│   │   │   ├── deep-thinker.service.ts
-│   │   │   ├── folder-proposer.service.ts
-│   │   │   └── token-budget.service.ts
+│   │   │   ├── 📂 agents/
+│   │   │   │   ├── orchestrator.service.ts     ← GPT-4o-mini 3-tool agent
+│   │   │   │   ├── cognitive-load.service.ts
+│   │   │   │   ├── synthesizer.service.ts
+│   │   │   │   └── visual-cortex.service.ts    ← Image-to-text
+│   │   │   ├── 📂 organizer/
+│   │   │   │   ├── folder-organizer.service.ts
+│   │   │   │   └── folder-proposer.service.ts
+│   │   │   ├── 📂 pipeline/
+│   │   │   │   ├── document-pipeline.service.ts
+│   │   │   │   └── document-preview.service.ts ← Token-safe doc sampling
+│   │   │   ├── 📂 search/
+│   │   │   │   └── vector.service.ts           ← Atlas Vector Search
+│   │   │   └── 📂 models/
+│   │   │       ├── chat.model.ts
+│   │   │       └── token-budget.model.ts
 │   │   ├── 📂 comparison/
+│   │   │   ├── comparison.service.ts           ← RAG chat across 2 docs
+│   │   │   ├── deep-thinker.service.ts         ← 3-model fallback comparison
 │   │   │   ├── comparison.controller.ts
 │   │   │   └── comparison.routes.ts
 │   │   ├── 📂 admin/
 │   │   │   ├── admin.controller.ts
 │   │   │   ├── admin.service.ts
-│   │   │   ├── admin.routes.ts
-│   │   │   └── __tests__/
-│   │   │       └── admin.service.test.ts
-│   │   └── 📂 analytics/
-│   │       ├── analytics.model.ts
-│   │       ├── analytics.controller.ts
-│   │       ├── analytics.service.ts
-│   │       ├── analytics.routes.ts
-│   │       └── __tests__/
-│   │           └── analytics.service.test.ts
+│   │   │   └── admin.routes.ts
+│   │   ├── 📂 analytics/
+│   │   │   ├── analytics.model.ts
+│   │   │   ├── analytics.controller.ts
+│   │   │   ├── analytics.service.ts
+│   │   │   └── analytics.routes.ts
+│   │   ├── 📂 settings/
+│   │   │   ├── settings.service.ts
+│   │   │   └── settings.routes.ts
+│   │   └── 📂 payments/
+│   │       ├── payment.controller.ts
+│   │       └── payment.routes.ts
 │   │
-│   └── app.ts                          ← Express app entry point
+│   ├── app.ts                          ← Express app (middleware + routes)
+│   └── server.ts                       ← HTTP server entry point
 │
 ├── jest.config.js
 ├── tsconfig.json
@@ -444,8 +509,25 @@ npm run dev
 ### 4. Run Tests
 
 ```bash
-npm test
-# ✅  All suites pass
+# Run all suites with coverage report
+npm run test:coverage
+
+# Run a specific feature
+npx jest --testPathPatterns="auth"
+npx jest --testPathPatterns="documents/__tests__/upload"
+npx jest --testPathPatterns="admin"
+npx jest --testPathPatterns="analytics"
+```
+
+### 5. View API Documentation
+
+```bash
+# Requires VS Code Swagger Viewer extension (search "Swagger Viewer" by Arjun)
+# Open docs/ContextAPI.yaml and press Shift+Alt+P
+
+# OR use Redocly CLI (no install needed):
+npx --yes @redocly/cli preview-docs docs/ContextAPI.yaml
+# Opens http://127.0.0.1:8080
 ```
 
 ---
@@ -458,7 +540,7 @@ Create a `.env` in the root of `context-api/`. **Never commit this file.**
 # ── Server ────────────────────────────────────────────────
 NODE_ENV=development
 PORT=5000
-CLIENT_URL=http://localhost:3000
+FRONTEND_URL=http://localhost:5173
 
 # ── Database ───────────────────────────────────────────────
 MONGO_URI=mongodb+srv://<user>:<password>@cluster.mongodb.net/context?retryWrites=true
@@ -480,6 +562,12 @@ GROQ_API_KEY=gsk_...
 GROQ_VERSATILE_COMPARISON_MODEL=llama-3.3-70b-versatile
 GROQ_INSTANT_COMPARISON_MODEL=llama-3.1-8b-instant
 
+# ── Email (Password Reset) ─────────────────────────────────
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_USER=your_email@gmail.com
+SMTP_PASS=your_app_password
+
 # ── AI Budget ──────────────────────────────────────────────
 AI_DAILY_TOKEN_BUDGET=50000
 ```
@@ -488,8 +576,18 @@ AI_DAILY_TOKEN_BUDGET=50000
 
 ## 🔌 API Overview
 
-> Full specification: [`docs/openapi.yaml`](./docs/openapi.yaml)
+> Full public specification: [`docs/ContextAPI.yaml`](./docs/ContextAPI.yaml)
 > Base URL: `http://localhost:5000/api`
+
+### Documentation Strategy (BaaS Standard)
+
+Context API follows the industry-standard practice of separating public and internal documentation:
+
+| Collection | Scope | Use Case |
+| --- | --- | --- |
+| `ContextAPI.yaml` | Auth, Documents, Folders, AI Core, Comparison | Third-party integrators & SDK generation |
+| `Context API (Public).postman_collection.json` | Same as above | Frontend & partner testing |
+| `Context API (Internal).postman_collection.json` | All endpoints + Admin/Analytics/Settings/Payments | Internal dev team only |
 
 ### Token Budget System
 
@@ -509,6 +607,20 @@ When the budget is exceeded, the API returns 429 with Retry-After headers.
 
 ---
 
+## 📖 API Documentation
+
+The `ContextAPI.yaml` follows **OpenAPI 3.0.3** and includes:
+
+- ✅ `operationId` on every endpoint (enables automatic SDK generation)
+- ✅ Reusable `components/schemas` — `ErrorEnvelope`, `TokenBudget429`, `DocumentMetadata`, `PaginatedDocuments`
+- ✅ Reusable `components/responses` — `BadRequest`, `Unauthorized`, `NotFound`, `TooManyRequests`, `InternalServer`
+- ✅ Reusable `components/headers` — `Retry-After`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`
+- ✅ `externalDocs` links per tag (Auth, Documents)
+- ✅ `contact`, `license`, and `termsOfService` in the `info` block
+- ✅ Full error response mapping on every single endpoint (400 / 401 / 404 / 429 / 500)
+
+---
+
 ## 🧪 Testing
 
 The test suite uses **Jest + ts-jest** with full module mocking — no live database or AI calls needed.
@@ -517,25 +629,42 @@ The test suite uses **Jest + ts-jest** with full module mocking — no live data
 # Run all suites
 npm test
 
-# Run a specific feature
-npx jest --testPathPatterns="auth"
-npx jest --testPathPatterns="documents/__tests__/upload"
-npx jest --testPathPatterns="admin"
-npx jest --testPathPatterns="analytics"
+# Run with coverage report
+npm run test:coverage
 ```
 
-### Coverage Summary
+### Coverage Summary (Latest Run)
 
-| Feature                 | Tests  | Status      |
-| ----------------------- | ------ | ----------- |
-| Auth Service            | 8      | ✅ Pass     |
-| User Service            | 6      | ✅ Pass     |
-| Comparison Service      | 4      | ✅ Pass     |
-| Upload Service          | 13     | ✅ Pass     |
-| Admin Service           | 8      | ✅ Pass     |
-| Analytics Service       | 7      | ✅ Pass     |
-| SuggestedFocus Service  | 10     | ✅ Pass     |
-| **Total**               | **56** | **✅ 100%** |
+| Feature                    | Tests | Status     |
+| -------------------------- | ----- | ---------- |
+| Auth Service               | 8     | ✅ Pass    |
+| User Service               | 6     | ✅ Pass    |
+| Upload Service             | 13    | ✅ Pass    |
+| Document Service           | 6     | ✅ Pass    |
+| Document Chat Service      | 5     | ✅ Pass    |
+| Suggested Focus Service    | 10    | ✅ Pass    |
+| Folder Service             | 6     | ✅ Pass    |
+| Folder Organizer Service   | 5     | ✅ Pass    |
+| Folder Proposer Service    | 3     | ✅ Pass    |
+| Orchestrator Service       | 8     | ✅ Pass    |
+| Synthesizer Service        | 4     | ✅ Pass    |
+| Cognitive Load Service     | 5     | ✅ Pass    |
+| Visual Cortex Service      | 4     | ✅ Pass    |
+| Document Pipeline Service  | 7     | ✅ Pass    |
+| Document Preview Service   | 6     | ✅ Pass    |
+| Comparison Service         | 4     | ✅ Pass    |
+| Deep Thinker Service       | 5     | ✅ Pass    |
+| Vector Service             | 3     | ✅ Pass    |
+| Admin Service              | 8     | ✅ Pass    |
+| Analytics Service          | 7     | ✅ Pass    |
+| Payments Controller        | 5     | ✅ Pass    |
+| Settings Service           | 3     | ✅ Pass    |
+| Auth Middleware            | 6     | ✅ Pass    |
+| RequireAdmin Middleware     | 4     | ✅ Pass    |
+| Token Budget Middleware     | 5     | ✅ Pass    |
+| **Total**                  | **167** | **✅ 24 Suites / 100% Pass** |
+
+> Overall statement coverage: **~81%**. Core business logic services (admin, analytics, comparison, pipeline) reach **90%+**.
 
 ---
 

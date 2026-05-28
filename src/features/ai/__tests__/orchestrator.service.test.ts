@@ -73,12 +73,12 @@ describe('OrchestratorService', () => {
       expect(result.tags).toEqual(['Uncategorized'])
     })
 
-    it('invokes agent with correct thread_id matching documentId', async () => {
+    it('invokes agent with a 60-second timeout config', async () => {
       mockAgentInvoke.mockResolvedValueOnce(fullAgentResponse)
-      await OrchestratorService.analyzeDocumentMetadata('my-doc-id', 'text')
+      await OrchestratorService.analyzeDocumentMetadata('my-doc-id', 'document content here')
 
       const [, config] = mockAgentInvoke.mock.calls[0]
-      expect(config.configurable.thread_id).toBe('my-doc-id')
+      expect(config.timeout).toBe(60_000)
     })
 
     it('throws when agent.invoke() rejects', async () => {

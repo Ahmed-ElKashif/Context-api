@@ -130,6 +130,11 @@ export class OrchestratorService {
       When generating the summary for the classifyDocument tool, you MUST follow this style:
       ${stylingRule}
       
+      CRITICAL LANGUAGE RULE:
+      Detect the primary language of the document text provided. Write the summary and all tags 
+      in that SAME language. If the document is in Arabic, respond in Arabic. If it is in French, 
+      respond in French. Match the document's language exactly.
+      
       CRITICAL WORKFLOW:
       You MUST call all three tools in this exact order to complete your task:
       1. classifyDocument
@@ -153,7 +158,12 @@ export class OrchestratorService {
     // Strict Try/Catch on Agent Execution
     try {
       response = await agent.invoke(
-        { messages: [systemPrompt, new HumanMessage(`Analyze the following document text:\n\n${textPreview}`)] },
+        {
+          messages: [
+            systemPrompt,
+            new HumanMessage(`Analyze the following document text:\n\n${textPreview}`)
+          ]
+        },
         // ⏱️ 60s deadline: the ReAct agent does 3 sequential LLM tool calls.
         // Give it more time than a single call, but still enforce a ceiling.
         { timeout: 60_000 }

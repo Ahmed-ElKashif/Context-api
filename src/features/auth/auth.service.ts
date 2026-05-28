@@ -57,17 +57,22 @@ export class AuthService {
   static async forgotPassword(email: string): Promise<{ success: boolean; error?: { message: string; statusCode: number } }> {
     const user = await User.findOne({ email })
     if (!user) {
+      // Return success regardless — prevents email enumeration attacks
       return { success: true }
     }
 
-    const resetToken = crypto.randomBytes(32).toString('hex')
-    
-    user.resetPasswordToken = resetToken
-    user.resetPasswordExpires = new Date(Date.now() + 3600000)
+    // Generate a random raw token to send in the email link
+    const rawToken = crypto.randomBytes(32).toString('hex')
+
+    // Store only the SHA-256 hash — if the DB is breached the raw token is still safe
+    const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex')
+    user.resetPasswordToken = hashedToken
+    user.resetPasswordExpires = new Date(Date.now() + 3600000) // 1 hour
     await user.save()
 
     try {
-      await sendResetPasswordEmail(user.email, resetToken)
+      // Send the RAW token in the email — the user pastes this into the reset form
+      await sendResetPasswordEmail(user.email, rawToken)
       return { success: true }
     } catch (err) {
       console.error('[AuthService] Failed to send password reset email:', err)
@@ -79,8 +84,11 @@ export class AuthService {
   }
 
   static async resetPassword(token: string, passwordStr: string): Promise<{ success: boolean; error?: { message: string; statusCode: number } }> {
+    // Hash the incoming raw token before comparing — DB only stores hashes
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex')
+
     const user = await User.findOne({
-      resetPasswordToken: token,
+      resetPasswordToken: hashedToken,
       resetPasswordExpires: { $gt: new Date() }
     })
 
@@ -90,7 +98,8 @@ export class AuthService {
 
     const salt = await bcrypt.genSalt(10)
     user.passwordHash = await bcrypt.hash(passwordStr, salt)
-    
+
+    // Clear reset fields so the token can never be reused
     user.resetPasswordToken = undefined
     user.resetPasswordExpires = undefined
     await user.save()
