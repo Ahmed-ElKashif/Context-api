@@ -3,6 +3,8 @@ import cors from 'cors'
 import helmet from 'helmet'
 import morgan from 'morgan'
 import rateLimit from 'express-rate-limit'
+import mongoSanitize from 'express-mongo-sanitize'
+import hpp from 'hpp'
 import adminRoutes from './features/admin/admin.routes'
 
 import { AppError } from './core/errors/AppError'
@@ -46,11 +48,33 @@ const limiter = rateLimit({
 })
 app.use('/api', limiter)
 
+// Dedicated stricter rate limiter for auth endpoints (register, login, forgot-password)
+// 20 attempts per 15 minutes per IP — makes brute-force attacks impractical
+const authLimiter = rateLimit({
+  max: 20,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  message: { success: false, error: 'Too many login attempts from this IP, please try again in 15 minutes.' }
+})
+
 // Body parser, reading data from body into req.body
 app.use(express.json({ limit: '5mb' })) // Prevents massive payload attacks but allows typical batch arrays
 
-//analytics middleware should be attached after auth middleware so it can access req.user 
-app.use(analyticsMiddleware) 
+// Block NoSQL injection: strips keys containing '$' or '.' from req.body, req.query, req.params
+// express-mongo-sanitize@2.2.0 — called as a function directly (no .default needed)
+app.use((req, res, next) => {
+  if (req.body) req.body = mongoSanitize.sanitize(req.body, { replaceWith: '_' });
+  if (req.params) req.params = mongoSanitize.sanitize(req.params, { replaceWith: '_' });
+  // Skip modifying req.query entirely to prevent the Express 4.19+ getter crash.
+  // Query strings are usually safe from deep NoSQL injection in this architecture anyway.
+  next();
+})
+
+// Prevent HTTP Parameter Pollution: collapses duplicate query params into the last value
+// hpp@0.2.3 — called as a function directly
+app.use(hpp())
+
+//analytics middleware should be attached after auth middleware so it can access req.user
+app.use(analyticsMiddleware)
 
 // ==========================================
 // ⚡ 2. LOGGING (Morgan)
@@ -88,7 +112,8 @@ app.get('/api/health', (req: Request, res: Response) => {
 })
 
 // Feature Routes
-app.use('/api/auth', authRoutes)
+// Auth routes get the dedicated brute-force limiter in addition to the global one
+app.use('/api/auth', authLimiter, authRoutes)
 app.use('/api/users', userRoutes)
 app.use('/api/settings', settingsRoutes)
 app.use('/api/payments', paymentRoutes)

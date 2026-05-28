@@ -28,15 +28,22 @@ import { DocumentModel } from '../../documents/document.model'
 // ─── Mock models: primary and fallback ───────────────────────────────────────
 const mockPrimaryInvoke = jest.fn()
 const mockFallbackInvoke = jest.fn()
+const mockLastResortInvoke = jest.fn()
 
 const mockPrimary = { pipe: jest.fn().mockReturnValue({ invoke: mockPrimaryInvoke }) }
 const mockFallback = { pipe: jest.fn().mockReturnValue({ invoke: mockFallbackInvoke }) }
+const mockLastResort = { 
+  withConfig: jest.fn().mockReturnThis(),
+  pipe: jest.fn().mockReturnValue({ invoke: mockLastResortInvoke }) 
+}
 
 // Sample documents returned by the DB mock
 const docA = { _id: 'aaaa', extractedText: 'Neural networks and deep learning principles.' }
 const docB = { _id: 'bbbb', extractedText: 'Financial derivatives and risk management.' }
 
 const validComparisonResult = {
+  synthesis: 'A short synthesis',
+  similarityPercentage: 50,
   similarities: ['Both are academic papers'],
   differences: ['Different fields'],
   uniqueToA: ['Neural networks'],
@@ -44,7 +51,7 @@ const validComparisonResult = {
 }
 
 beforeEach(() => {
-  DeepThinkerService.init(mockPrimary as any, mockFallback as any)
+  DeepThinkerService.init(mockPrimary as any, mockFallback as any, mockLastResort as any)
   ;(DocumentModel.findOne as jest.Mock).mockResolvedValueOnce(docA).mockResolvedValueOnce(docB)
 })
 
@@ -83,13 +90,27 @@ describe('DeepThinkerService', () => {
       mockFallbackInvoke.mockResolvedValueOnce(validComparisonResult)
 
       const result = await DeepThinkerService.compareDocuments('user1', 'aaaa', 'bbbb')
-      expect(result).toEqual(validComparisonResult)
+      expect(result.synthesis).toEqual(validComparisonResult.synthesis)
+      expect(result._warning).toContain('Our primary AI engine was busy')
       expect(mockFallbackInvoke).toHaveBeenCalledTimes(1)
+      expect(mockLastResortInvoke).not.toHaveBeenCalled()
     })
 
-    it('throws descriptive error when BOTH models fail', async () => {
+    it('falls back to GPT-4o-mini when BOTH 70B and 8B throw', async () => {
+      mockPrimaryInvoke.mockRejectedValueOnce(new Error('70B rate limit'))
+      mockFallbackInvoke.mockRejectedValueOnce(new Error('8B down'))
+      mockLastResortInvoke.mockResolvedValueOnce(validComparisonResult)
+
+      const result = await DeepThinkerService.compareDocuments('user1', 'aaaa', 'bbbb')
+      expect(result.synthesis).toEqual(validComparisonResult.synthesis)
+      expect(result._warning).toContain('Both primary AI engines were busy')
+      expect(mockLastResortInvoke).toHaveBeenCalledTimes(1)
+    })
+
+    it('throws descriptive error when ALL THREE models fail', async () => {
       mockPrimaryInvoke.mockRejectedValueOnce(new Error('70B down'))
       mockFallbackInvoke.mockRejectedValueOnce(new Error('8B down'))
+      mockLastResortInvoke.mockRejectedValueOnce(new Error('GPT-4o-mini down'))
 
       await expect(DeepThinkerService.compareDocuments('user1', 'aaaa', 'bbbb')).rejects.toThrow(
         'Our AI engines are currently experiencing high traffic'

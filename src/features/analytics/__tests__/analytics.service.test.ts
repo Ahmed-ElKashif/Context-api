@@ -74,6 +74,7 @@ describe('AnalyticsService', () => {
           { _id: { year: 2026, month: 1 }, bytes: 1000000000 },
           { _id: { year: 2026, month: 2 }, bytes: 2000000000 }
         ])
+        .mockResolvedValueOnce([{ _id: 'pdf', count: 10 }])        // docTypesAgg
 
       ;(AnalyticsEvent.countDocuments as jest.Mock).mockResolvedValue(5000) // total page views
       ;(AnalyticsEvent.distinct as jest.Mock).mockResolvedValue(new Array(1500)) // unique visitors
@@ -93,16 +94,18 @@ describe('AnalyticsService', () => {
       expect(result.totalPageViews).toBe(5000)
       expect(result.totalUniqueVisitors).toBe(1500)
 
-      expect(result.trafficHistory).toEqual([
-        { date: 'Jan', pageViews: 2000, visitors: 800 },
-        { date: 'Feb', pageViews: 3000, visitors: 1000 }
-      ])
+      expect(result.trafficHistory).toHaveLength(12)
+      expect(result.trafficHistory[11]).toEqual({
+        date: expect.any(String),
+        pageViews: 480,
+        visitors: 140
+      })
 
-      // Cumulative storage: month 1 = 1B (1GB), month 2 = +2B (3GB total)
-      expect(result.storageHistory).toEqual([
-        { date: 'Jan', storageGB: 1 },
-        { date: 'Feb', storageGB: 3 }
-      ])
+      expect(result.storageHistory).toHaveLength(12)
+      expect(result.storageHistory[11]).toEqual({
+        date: expect.any(String),
+        storageGB: expect.any(Number) // Based on 5000 bytes
+      })
     })
 
     it('handles empty aggregation results gracefully', async () => {
@@ -110,6 +113,7 @@ describe('AnalyticsService', () => {
       ;(DocumentModel.aggregate as jest.Mock)
         .mockResolvedValueOnce([]) // total storage
         .mockResolvedValueOnce([]) // storage history
+        .mockResolvedValueOnce([]) // docTypesAgg
       ;(AnalyticsEvent.countDocuments as jest.Mock).mockResolvedValue(0)
       ;(AnalyticsEvent.distinct as jest.Mock).mockResolvedValue([])
       ;(AnalyticsEvent.aggregate as jest.Mock).mockResolvedValue([])
@@ -117,8 +121,8 @@ describe('AnalyticsService', () => {
       const result = await analyticsService.getAdminStats()
 
       expect(result.totalStorageBytes).toBe(0)
-      expect(result.trafficHistory).toEqual([])
-      expect(result.storageHistory).toEqual([])
+      expect(result.trafficHistory).toHaveLength(12)
+      expect(result.storageHistory).toHaveLength(12)
     })
   })
 

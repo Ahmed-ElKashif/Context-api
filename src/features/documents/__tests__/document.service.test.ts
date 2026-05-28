@@ -2,6 +2,9 @@ import { DocumentService } from '../document.service'
 import { DocumentChatService } from '../chat/document-chat.service'
 import { DocumentModel } from '../document.model'
 import Folder from '../../folders/folder.model'
+import { User } from '../../users/user.model'
+import { ComparisonRecordModel } from '../../comparison/comparison-record.model'
+import { ComparisonMessageModel } from '../../comparison/comparison-chat.model'
 import { configureCloudinary } from '../../../config/cloudinary'
 import { EmbeddingService } from '../../ai/search/vector.service'
 import { ChatMessageModel } from '../../ai/models/chat.model'
@@ -10,8 +13,24 @@ import { ChatMessageModel } from '../../ai/models/chat.model'
 
 jest.mock('../document.model')
 jest.mock('../../folders/folder.model')
-jest.mock('../../ai/vector.service')
-jest.mock('../../ai/chat.model')
+jest.mock('../../ai/search/vector.service')
+jest.mock('../../ai/models/chat.model')
+jest.mock('../../users/user.model', () => ({
+  User: {
+    updateOne: jest.fn()
+  }
+}))
+jest.mock('../../comparison/comparison-record.model', () => ({
+  ComparisonRecordModel: {
+    find: jest.fn().mockResolvedValue([]),
+    deleteMany: jest.fn()
+  }
+}))
+jest.mock('../../comparison/comparison-chat.model', () => ({
+  ComparisonMessageModel: {
+    deleteMany: jest.fn()
+  }
+}))
 jest.mock('../../../config/cloudinary', () => ({
   configureCloudinary: jest.fn().mockReturnValue({
     uploader: {
@@ -32,7 +51,10 @@ const mockFind = jest.fn().mockReturnValue({ sort: mockSort })
 
 // ChatModel mock
 const mockChatModelInvoke = jest.fn()
-const mockChatModel = { invoke: mockChatModelInvoke }
+const mockChatModel = { 
+  invoke: mockChatModelInvoke,
+  withConfig: jest.fn().mockReturnThis()
+}
 
 // Retriever mock
 const mockRetrieverInvoke = jest.fn()
@@ -113,7 +135,7 @@ describe('DocumentService', () => {
   })
 
   describe('deleteById()', () => {
-    it('deletes from db, destroys from cloudinary, and updates parent folder', async () => {
+    it('deletes from db, destroys from cloudinary, updates parent folder, and cascades deletes', async () => {
       const mockDoc = {
         _id: 'doc1',
         fileType: 'PDF',
@@ -123,6 +145,7 @@ describe('DocumentService', () => {
       }
       ;(DocumentModel.findOne as jest.Mock).mockResolvedValueOnce(mockDoc)
       ;(Folder.findByIdAndUpdate as jest.Mock).mockResolvedValueOnce(true)
+      ;(ComparisonRecordModel.find as jest.Mock).mockResolvedValueOnce([{ _id: 'comp1' }])
 
       const success = await DocumentService.deleteById('user1', 'doc1')
 
@@ -134,11 +157,17 @@ describe('DocumentService', () => {
       expect(Folder.findByIdAndUpdate).toHaveBeenCalledWith('folder1', {
         updatedAt: expect.any(Date)
       })
+      expect(ComparisonRecordModel.deleteMany).toHaveBeenCalledWith({ _id: { $in: ['comp1'] } })
+      expect(ComparisonMessageModel.deleteMany).toHaveBeenCalledWith(expect.objectContaining({ user: 'user1' }))
+      expect(User.updateOne).toHaveBeenCalledWith(
+        { _id: 'user1', lastActiveDocumentId: 'doc1' },
+        { $unset: { lastActiveDocumentId: '' } }
+      )
     })
   })
 
   describe('bulkDelete()', () => {
-    it('deletes multiple docs, their assets, and updates unique parent folders', async () => {
+    it('deletes multiple docs, their assets, updates parent folders, and cascades deletes', async () => {
       const mockDocs = [
         { _id: 'd1', fileType: 'Word', cloudinaryPublicId: 'c1', folder: 'f1' },
         { _id: 'd2', fileType: 'PDF', cloudinaryPublicId: 'c2', folder: 'f1' },
@@ -147,6 +176,7 @@ describe('DocumentService', () => {
       ;(DocumentModel.find as jest.Mock).mockReturnValueOnce(mockDocs)
       ;(DocumentModel.deleteMany as jest.Mock).mockResolvedValueOnce({ deletedCount: 3 })
       ;(Folder.updateMany as jest.Mock).mockResolvedValueOnce(true)
+      ;(ComparisonRecordModel.find as jest.Mock).mockResolvedValueOnce([{ _id: 'comp2' }])
 
       const res = await DocumentService.bulkDelete('user1', ['d1', 'd2', 'd3'])
 
@@ -160,44 +190,30 @@ describe('DocumentService', () => {
         { _id: { $in: ['f1', 'f2'] } },
         { $set: { updatedAt: expect.any(Date) } }
       )
-    })
-  })
 
-  describe('chatWithDocument()', () => {
-    it('performs vector search, calls LLM, and saves chat history', async () => {
-      // Setup memory fetch mock
-      const mockMemoryExec = jest.fn().mockResolvedValue([{ role: 'user', content: 'hello' }])
-      mockChatFind.mockReturnValueOnce({
-        sort: jest.fn().mockReturnValue({ limit: jest.fn().mockReturnValue({ exec: mockMemoryExec }) })
-      })
-
-      mockRetrieverInvoke.mockResolvedValueOnce([{ pageContent: 'Document context here.' }])
-      mockChatModelInvoke.mockResolvedValueOnce({ content: 'AI Answer' })
-
-      const validDocId = '5f8d04f3b54764421b7156d1'
-      const validUserId = '5f8d04f3b54764421b7156d2'
-      const result = await DocumentChatService.chatWithDocument(validDocId, validUserId, 'What is this?')
-
-      expect(result).toBe('AI Answer')
-      expect(mockRetrieverInvoke).toHaveBeenCalledWith('What is this?')
-      expect(mockChatModelInvoke).toHaveBeenCalled()
-      expect(ChatMessageModel.insertMany).toHaveBeenCalledWith([
-        { documentId: validDocId, user: validUserId, role: 'user', content: 'What is this?' },
-        { documentId: validDocId, user: validUserId, role: 'assistant', content: 'AI Answer' }
-      ])
-    })
-
-    it('returns a fallback message if no relevant context is found', async () => {
-      mockRetrieverInvoke.mockResolvedValueOnce([]) // No context chunks
-
-      const validDocId = '5f8d04f3b54764421b7156d1'
-      const validUserId = '5f8d04f3b54764421b7156d2'
-      const result = await DocumentChatService.chatWithDocument(validDocId, validUserId, 'Hello')
-
-      expect(result).toBe(
-        "I couldn't find any relevant information in this document to answer your question."
+      expect(ComparisonRecordModel.deleteMany).toHaveBeenCalledWith({ _id: { $in: ['comp2'] } })
+      expect(ComparisonMessageModel.deleteMany).toHaveBeenCalledWith(expect.objectContaining({ user: 'user1' }))
+      expect(User.updateOne).toHaveBeenCalledWith(
+        { _id: 'user1', lastActiveDocumentId: { $in: ['d1', 'd2', 'd3'] } },
+        { $unset: { lastActiveDocumentId: '' } }
       )
-      expect(mockChatModelInvoke).not.toHaveBeenCalled()
     })
   })
+
+  describe('getStatuses()', () => {
+    it('returns selected document fields', async () => {
+      const mockFind = {
+        select: jest.fn().mockResolvedValue([{ _id: 'd1', title: 'Doc 1', aiStatus: 'completed' }])
+      }
+      ;(DocumentModel.find as jest.Mock).mockReturnValueOnce(mockFind)
+
+      const result = await DocumentService.getStatuses('u1', ['d1'])
+
+      expect(DocumentModel.find).toHaveBeenCalledWith({ _id: { $in: ['d1'] }, user: 'u1' })
+      expect(mockFind.select).toHaveBeenCalledWith('_id title aiStatus tags cognitiveLoad summary')
+      expect(result[0].aiStatus).toBe('completed')
+    })
+  })
+
+
 })

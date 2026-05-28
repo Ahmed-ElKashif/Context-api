@@ -37,6 +37,7 @@ export class SynthesizerAgent {
         2. Highlight how the documents complement each other across their specific subject areas and cognitive complexity.
         3. Even if documents cover distinct topics, group them logically into an executive overview. Never dismiss documents as unrelated.
         4. Format your response in professional Markdown using clear headings (###), bulleted takeaways, and bold emphasis.
+        5. LANGUAGE RULE: Detect the primary language of the provided document summaries. Write your ENTIRE synthesis in that SAME language. If the summaries are in Arabic, your output MUST be in Arabic.
         
         LENGTH CONSTRAINT — CRITICAL:
         Your entire response MUST be 200–250 words maximum. No exceptions.

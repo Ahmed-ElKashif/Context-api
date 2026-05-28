@@ -1,6 +1,7 @@
 import { adminService } from '../admin.service'
 import { User } from '../../users/user.model'
 import { analyticsService } from '../../analytics/analytics.service'
+import { TokenBudgetModel } from '../../ai/models/token-budget.model'
 
 jest.mock('../../users/user.model', () => ({
   User: {
@@ -16,9 +17,27 @@ jest.mock('../../analytics/analytics.service', () => ({
   }
 }))
 
+jest.mock('../../documents/document.model', () => ({
+  DocumentModel: {
+    aggregate: jest.fn().mockResolvedValue([{ _id: '1', totalBytes: 1000 }])
+  }
+}))
+
+jest.mock('../../ai/models/token-budget.model', () => ({
+  TokenBudgetModel: {
+    aggregate: jest.fn(),
+    find: jest.fn()
+  }
+}))
+
 describe('AdminService', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+    jest.spyOn(Date, 'now').mockReturnValue(new Date('2026-05-01T00:00:00.000Z').getTime())
+  })
+
+  afterEach(() => {
+    jest.restoreAllMocks()
   })
 
   describe('getStats()', () => {
@@ -52,7 +71,10 @@ describe('AdminService', () => {
 
       expect(User.find).toHaveBeenCalledWith({})
       expect(User.countDocuments).toHaveBeenCalledWith({})
-      expect(result.users).toEqual(mockUsers)
+      expect(result.users).toEqual([
+        { _id: '1', username: 'test1', storageUsedBytes: 1000 },
+        { _id: '2', username: 'test2', storageUsedBytes: 0 }
+      ])
       expect(result.pagination).toEqual({ total: 20, page: 2, limit: 5, totalPages: 4 })
     })
 
@@ -110,22 +132,20 @@ describe('AdminService', () => {
     it('generates a CSV string of all users', async () => {
       const mockUsers = [
         {
+          _id: '1',
           username: 'alice',
           email: 'alice@example.com',
           fullName: 'Alice A',
           role: 'user',
           subscriptionStatus: 'active',
-          storageUsedBytes: 5000000, // 5.0 MB
           isSuspended: false,
           createdAt: new Date('2026-01-01T00:00:00.000Z')
         },
         {
+          _id: '2',
           username: 'bob',
           email: 'bob@example.com',
           fullName: 'Bob B',
-          // missing role defaults to 'user'
-          // missing status defaults to 'none'
-          // missing storage defaults to 0
           isSuspended: true,
           createdAt: new Date('2026-02-01T00:00:00.000Z')
         }
@@ -141,8 +161,41 @@ describe('AdminService', () => {
 
       const rows = csv.split('\n')
       expect(rows[0]).toBe('Username,Email,Full Name,Role,Status,Storage (MB),Suspended,Joined')
-      expect(rows[1]).toBe(`alice,alice@example.com,Alice A,user,active,5.0,No,${new Date('2026-01-01T00:00:00.000Z').toLocaleDateString()}`)
+      expect(rows[1]).toBe(`alice,alice@example.com,Alice A,user,active,0.0,No,${new Date('2026-01-01T00:00:00.000Z').toLocaleDateString()}`)
       expect(rows[2]).toBe(`bob,bob@example.com,Bob B,user,none,0.0,Yes,${new Date('2026-02-01T00:00:00.000Z').toLocaleDateString()}`)
+    })
+  })
+
+  describe('getAIUsage()', () => {
+    it('aggregates ai usage stats', async () => {
+      ;(TokenBudgetModel.aggregate as jest.Mock)
+        .mockResolvedValueOnce([{ totalTokens: 1000, totalRequests: 50 }]) // monthly usage
+        .mockResolvedValueOnce([{ _id: 'u1', tokensUsed: 500, requestCount: 20 }]) // top users
+        .mockResolvedValueOnce([{ _id: '2026-05-01', tokensUsed: 100, requestCount: 5 }]) // daily
+        .mockResolvedValueOnce([{ _id: '2026-05', tokensUsed: 1000, requestCount: 50 }]) // db monthly
+
+      ;(User.find as jest.Mock).mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([{ _id: 'u1', username: 'alice', email: 'alice@a.com' }])
+      })
+
+      const result = await adminService.getAIUsage()
+      expect(result.totalTokensThisMonth).toBe(1000)
+      expect(result.topUsers[0].username).toBe('alice')
+      expect(result.dailyUsage[0].tokensUsed).toBe(100)
+      expect(result.monthlyUsage.length).toBe(6)
+    })
+  })
+
+  describe('getUserAIUsage()', () => {
+    it('returns history for specific user', async () => {
+      ;(TokenBudgetModel.find as jest.Mock).mockReturnValue({
+        sort: jest.fn().mockReturnThis(),
+        lean: jest.fn().mockResolvedValue([{ date: '2026-05-01', tokensUsed: 100, requestCount: 5 }])
+      })
+
+      const result = await adminService.getUserAIUsage('u1')
+      expect(result[0].tokensUsed).toBe(100)
     })
   })
 })

@@ -81,7 +81,7 @@ describe('AuthService', () => {
         username: 'newuser',
         email: 'test@test.com',
         passwordHash: 'hashedpassword',
-        persona: 'Student'
+        persona: 'student'
       })
       expect(result.user?.username).toBe('newuser')
       expect(result.token).toBe('mock.token')
@@ -109,7 +109,7 @@ describe('AuthService', () => {
     })
 
     it('returns user and token on successful login', async () => {
-      ;(User.findOne as jest.Mock).mockResolvedValueOnce({ id: 'u1', passwordHash: 'hash' })
+      ;(User.findOne as jest.Mock).mockResolvedValueOnce({ id: 'u1', username: 'u1', passwordHash: 'hash' })
       ;(bcrypt.compare as jest.Mock).mockResolvedValueOnce(true)
       ;(jwt.sign as jest.Mock).mockReturnValue('mock.token')
 

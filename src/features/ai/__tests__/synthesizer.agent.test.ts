@@ -27,7 +27,8 @@ jest.mock('@langchain/core/prompts', () => ({
 // ─── Import AFTER mock declaration ───────────────────────────────────────────
 import { SynthesizerAgent } from '../agents/synthesizer.service'
 
-const mockModel = { invoke: jest.fn(), pipe: jest.fn() }
+const mockWithConfig = jest.fn().mockReturnThis()
+const mockModel = { invoke: jest.fn(), pipe: jest.fn(), withConfig: mockWithConfig }
 
 beforeEach(() => {
   SynthesizerAgent.init(mockModel as any)

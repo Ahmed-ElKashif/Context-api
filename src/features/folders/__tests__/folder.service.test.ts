@@ -1,12 +1,34 @@
+jest.mock('archiver', () => ({
+  create: jest.fn(),
+  ZipArchive: jest.fn()
+}))
+
 import { FolderService } from '../folder.service'
 import Folder from '../folder.model'
 import { DocumentModel } from '../../documents/document.model'
+import { EmbeddingService } from '../../ai/search/vector.service'
+import { ChatMessageModel } from '../../ai/models/chat.model'
+import { ComparisonRecordModel } from '../../comparison/comparison-record.model'
+import { ComparisonMessageModel } from '../../comparison/comparison-chat.model'
 import { configureCloudinary } from '../../../config/cloudinary'
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
 jest.mock('../folder.model')
 jest.mock('../../documents/document.model')
+jest.mock('../../ai/search/vector.service')
+jest.mock('../../ai/models/chat.model')
+jest.mock('../../comparison/comparison-record.model', () => ({
+  ComparisonRecordModel: {
+    find: jest.fn().mockResolvedValue([]),
+    deleteMany: jest.fn()
+  }
+}))
+jest.mock('../../comparison/comparison-chat.model', () => ({
+  ComparisonMessageModel: {
+    deleteMany: jest.fn()
+  }
+}))
 jest.mock('../../../config/cloudinary', () => ({
   configureCloudinary: jest.fn().mockReturnValue({
     uploader: {
@@ -161,6 +183,7 @@ describe('FolderService', () => {
       mockDocFind.mockReturnValueOnce(docs)          // documentsToDelete
       ;(DocumentModel.deleteMany as jest.Mock).mockResolvedValueOnce(true)
       ;(Folder.deleteMany as jest.Mock).mockResolvedValueOnce(true)
+      ;(ComparisonRecordModel.find as jest.Mock).mockResolvedValueOnce([{ _id: 'comp1' }])
 
       const result = await FolderService.deleteFolderWithContents('user1', 'root')
 
@@ -170,6 +193,11 @@ describe('FolderService', () => {
       expect(mockCloudinary.uploader.destroy).toHaveBeenCalledTimes(2)
       expect(mockCloudinary.uploader.destroy).toHaveBeenCalledWith('pub1', { resource_type: 'image' })
       expect(mockCloudinary.uploader.destroy).toHaveBeenCalledWith('pub2', { resource_type: 'raw' })
+
+      expect(EmbeddingService.deleteDocumentChunks).toHaveBeenCalledWith(['d1', 'd2'], 'user1')
+      expect(ChatMessageModel.deleteMany).toHaveBeenCalledWith({ documentId: { $in: ['d1', 'd2'] }, user: 'user1' })
+      expect(ComparisonRecordModel.deleteMany).toHaveBeenCalledWith({ _id: { $in: ['comp1'] } })
+      expect(ComparisonMessageModel.deleteMany).toHaveBeenCalledWith(expect.objectContaining({ user: 'user1' }))
 
       expect(DocumentModel.deleteMany).toHaveBeenCalledWith({
         user: 'user1',
