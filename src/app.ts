@@ -5,6 +5,7 @@ import morgan from 'morgan'
 import rateLimit from 'express-rate-limit'
 import mongoSanitize from 'express-mongo-sanitize'
 import hpp from 'hpp'
+import compression from 'compression'
 import adminRoutes from './features/admin/admin.routes'
 
 import { AppError } from './core/errors/AppError'
@@ -60,6 +61,9 @@ const authLimiter = rateLimit({
 
 // Body parser, reading data from body into req.body
 app.use(express.json({ limit: '5mb' })) // Prevents massive payload attacks but allows typical batch arrays
+
+// Apply HTTP payload compression (Gzip/Brotli)
+app.use(compression())
 
 // Block NoSQL injection: strips keys containing '$' or '.' from req.body, req.query, req.params
 // express-mongo-sanitize@2.2.0 — called as a function directly (no .default needed)
