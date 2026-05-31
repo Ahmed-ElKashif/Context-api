@@ -5,8 +5,9 @@ import crypto from 'crypto'
 import { sendResetPasswordEmail } from '../../core/services/mail.service'
 
 export class AuthService {
-  static generateToken(id: string): string {
-    return jwt.sign({ id }, process.env.JWT_SECRET as string, {
+  // Generate a JWT containing the user ID and their current tokenVersion
+  static generateToken(id: string, tokenVersion: number): string {
+    return jwt.sign({ id, tokenVersion }, process.env.JWT_SECRET as string, {
       expiresIn: (process.env.JWT_EXPIRES_IN || '30d') as any
     })
   }
@@ -36,7 +37,7 @@ export class AuthService {
       persona
     })
 
-    const token = this.generateToken(user.id)
+    const token = this.generateToken(user.id, user.tokenVersion || 0)
     return { user, token }
   }
 
@@ -50,7 +51,7 @@ export class AuthService {
     const isMatch = await bcrypt.compare(passwordStr, user.passwordHash)
     if (!isMatch) return { error: { message: 'Invalid email or password', statusCode: 401 } }
 
-    const token = this.generateToken(user.id)
+    const token = this.generateToken(user.id, user.tokenVersion || 0)
     return { user, token }
   }
 
@@ -102,6 +103,10 @@ export class AuthService {
     // Clear reset fields so the token can never be reused
     user.resetPasswordToken = undefined
     user.resetPasswordExpires = undefined
+
+    // Global logout: increment tokenVersion to burn all existing JWTs for this user
+    user.tokenVersion = (user.tokenVersion || 0) + 1
+
     await user.save()
 
     return { success: true }

@@ -13,6 +13,7 @@ export interface IUser extends Document {
   resetPasswordToken?: string
   resetPasswordExpires?: Date
   isSuspended?: boolean            // ← added (needed by admin suspend endpoint)
+  tokenVersion: number             // ← added for global token revocation
   hasCompletedTour?: boolean
   hasCompletedPopulatedTour?: boolean
   hasCompletedLibraryTour?: boolean
@@ -58,6 +59,7 @@ const userSchema = new Schema<IUser>(
       enum: ['general', 'professional', 'student', 'developer'],
       default: 'general'
     },
+    tokenVersion: { type: Number, default: 0 },
     avatar: { type: String, required: false },
     avatarPublicId: { type: String, required: false },
     isSuspended: { type: Boolean, default: false },
