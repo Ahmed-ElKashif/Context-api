@@ -347,6 +347,7 @@ Returns: `synthesis`, `similarityPercentage`, `similarities`, `differences`, `un
 
 | Technology              | Purpose                                                          |
 | ----------------------- | ---------------------------------------------------------------- |
+| compression             | HTTP payload compression (Gzip/Brotli) shrinks JSON by up to 80% |
 | Helmet                  | HTTP security headers                                            |
 | express-rate-limit      | Brute-force protection (global + auth-specific limiters)         |
 | express-mongo-sanitize  | NoSQL injection guard on `req.body` & `req.params`               |
