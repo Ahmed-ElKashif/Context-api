@@ -47,7 +47,7 @@ app.use(helmet())
 const limiter = rateLimit({
   max: 1000, // Limit each IP to 1000 requests per window
   windowMs: 60 * 60 * 1000, // 1 Hour
-  message: { success: false, error: 'Too many requests from this IP, please try again in an hour.' }
+  message: { success: false, message: 'Too many requests from this IP, please try again in an hour.' }
 })
 app.use('/api', limiter)
 
@@ -55,8 +55,14 @@ app.use('/api', limiter)
 // 20 attempts per 15 minutes per IP — makes brute-force attacks impractical
 const authLimiter = rateLimit({
   max: 20,
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  message: { success: false, error: 'Too many login attempts from this IP, please try again in 15 minutes.' }
+  // DEV: 1 minute. PROD: 15 minutes.
+  windowMs: process.env.NODE_ENV === 'development' ? 1 * 60 * 1000 : 15 * 60 * 1000,
+  message: { 
+    success: false, 
+    message: process.env.NODE_ENV === 'development'
+      ? 'Too many login attempts from this IP, please try again in 1 minute. (Dev Mode)'
+      : 'Too many login attempts from this IP, please try again in 15 minutes.' 
+  }
 })
 
 // Body parser, reading data from body into req.body
