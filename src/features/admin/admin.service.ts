@@ -142,17 +142,26 @@ export const adminService = {
       return acc
     }, {} as Record<string, number>)
 
+    const csvCell = (value: any) => {
+      let safe = String(value ?? '').replace(/"/g, '""')
+      // Prevent CSV injection macros
+      if (/^[=\-@+ \t\r]/.test(safe)) {
+        safe = "'" + safe
+      }
+      return `"${safe}"`
+    }
+
     const header = 'Username,Email,Full Name,Role,Status,Storage (MB),Suspended,Joined\n'
     const rows = users.map((u) =>
       [
-        u.username,
-        u.email,
-        u.fullName,
-        u.role ?? 'user',
-        (u as any).subscriptionStatus ?? 'none',
-        ((storageMap[u._id.toString()] || 0) / 1e6).toFixed(1),
-        u.isSuspended ? 'Yes' : 'No',
-        new Date(u.createdAt).toLocaleDateString()
+        csvCell(u.username),
+        csvCell(u.email),
+        csvCell(u.fullName),
+        csvCell(u.role ?? 'user'),
+        csvCell((u as any).subscriptionStatus ?? 'none'),
+        csvCell(((storageMap[u._id.toString()] || 0) / 1e6).toFixed(1)),
+        csvCell(u.isSuspended ? 'Yes' : 'No'),
+        csvCell(new Date(u.createdAt).toLocaleDateString())
       ].join(',')
     ).join('\n')
 

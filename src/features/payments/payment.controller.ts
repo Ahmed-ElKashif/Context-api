@@ -117,6 +117,8 @@ export const paymentController = {
   async updateStatus(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const adminId = req.user?._id?.toString() || (req as any).user?.id
+      if (!adminId) return next(new AppError('Unauthorized', 401))
+      
       const { id } = req.params
       const { status } = req.body || {}
 

@@ -29,7 +29,7 @@
 </p>
 
 <p>
-  <img src="https://img.shields.io/badge/Jest-167_Tests_Passing-C21325?style=for-the-badge&logo=jest&logoColor=white"/>
+  <img src="https://img.shields.io/badge/Jest-172_Tests_Passing-C21325?style=for-the-badge&logo=jest&logoColor=white"/>
   <img src="https://img.shields.io/badge/JWT-Auth-FB015B?style=for-the-badge&logo=jsonwebtokens&logoColor=white"/>
   <img src="https://img.shields.io/badge/Token_Budget-50K_tokens%2Fday-4F46E5?style=for-the-badge"/>
 </p>
@@ -352,9 +352,19 @@ Returns: `synthesis`, `similarityPercentage`, `similarities`, `differences`, `un
 | express-mongo-sanitize  | NoSQL injection guard on `req.body` & `req.params`               |
 | HPP                     | HTTP parameter pollution guard                                   |
 | cors                    | Cross-Origin Resource Sharing (origin-locked to frontend URL)    |
+| cookie-parser           | Secure HTTP-Only Cookie extraction for JWT auth                  |
 | Token Budget Middleware  | 50,000 token/day per-user AI spend cap with `Retry-After` header |
 
 > **Note:** `express-mongo-sanitize` is applied as a custom wrapper that sanitizes `req.body` and `req.params` only. Express 4.19+ made `req.query` read-only, so direct `mongoSanitize()` middleware would crash the server — the wrapper bypasses this safely.
+
+### 🛡️ Recent Security Audit Fixes
+
+Context recently underwent a full security audit, resulting in hardened defenses across the entire API:
+- **HttpOnly Cookies:** JWT authentication has been fully migrated from LocalStorage to secure, `HttpOnly`, `SameSite=Strict` cookies to prevent XSS token theft.
+- **CSV Injection Prevention:** User data exports (`/api/admin/export/users`) now automatically neutralize Excel macro triggers (e.g. `=`, `+`, `-`, `@`).
+- **SSRF Protection:** Cloudinary assets downloaded for ZIP exports are strictly validated against `https://res.cloudinary.com/` to prevent internal server probing.
+- **Secure Password Resets:** Reset tokens are strictly hashed in the database and never queried in plain text. Global "Logout Everywhere" is enforced via `tokenVersion` increments upon reset.
+- **Privilege Escalation Guards:** Explicit `adminId` authorization checks govern all critical payment and user suspension endpoints.
 
 ### Dev & Testing
 
@@ -638,7 +648,7 @@ npm run test:coverage
 
 | Feature                    | Tests | Status     |
 | -------------------------- | ----- | ---------- |
-| Auth Service               | 8     | ✅ Pass    |
+| Auth Service               | 12    | ✅ Pass    |
 | User Service               | 6     | ✅ Pass    |
 | Upload Service             | 13    | ✅ Pass    |
 | Document Service           | 6     | ✅ Pass    |
@@ -656,14 +666,14 @@ npm run test:coverage
 | Comparison Service         | 4     | ✅ Pass    |
 | Deep Thinker Service       | 5     | ✅ Pass    |
 | Vector Service             | 3     | ✅ Pass    |
-| Admin Service              | 8     | ✅ Pass    |
+| Admin Service              | 9     | ✅ Pass    |
 | Analytics Service          | 7     | ✅ Pass    |
 | Payments Controller        | 5     | ✅ Pass    |
 | Settings Service           | 3     | ✅ Pass    |
 | Auth Middleware            | 6     | ✅ Pass    |
 | RequireAdmin Middleware     | 4     | ✅ Pass    |
 | Token Budget Middleware     | 5     | ✅ Pass    |
-| **Total**                  | **167** | **✅ 24 Suites / 100% Pass** |
+| **Total**                  | **172** | **✅ 24 Suites / 100% Pass** |
 
 > Overall statement coverage: **~81%**. Core business logic services (admin, analytics, comparison, pipeline) reach **90%+**.
 

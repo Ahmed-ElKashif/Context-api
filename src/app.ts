@@ -21,6 +21,7 @@ import settingsRoutes from './features/settings/settings.routes'
 import paymentRoutes from './features/payments/payment.routes'
 
 import { analyticsMiddleware } from './core/middlewares/analytics.middleware'
+import { csrfProtection } from './core/middlewares/csrf.middleware'
 import analyticsRoutes from './features/analytics/analytics.routes'
 const app: Application = express()
 
@@ -33,7 +34,8 @@ app.use(
   cors({
     origin: process.env.FRONTEND_URL || 'http://localhost:5173', // Only allow your frontend to talk to this API
     credentials: true, // Allow cookies/tokens to be sent
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS']
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Session-Id']
   })
 )
 
@@ -61,6 +63,12 @@ app.use(express.json({ limit: '5mb' })) // Prevents massive payload attacks but 
 
 // Block NoSQL injection: strips keys containing '$' or '.' from req.body, req.query, req.params
 // express-mongo-sanitize@2.2.0 — called as a function directly (no .default needed)
+import cookieParser from 'cookie-parser'
+app.use(cookieParser())
+
+// Apply CSRF Protection to all routes
+app.use(csrfProtection)
+
 app.use((req, res, next) => {
   if (req.body) req.body = mongoSanitize.sanitize(req.body, { replaceWith: '_' });
   if (req.params) req.params = mongoSanitize.sanitize(req.params, { replaceWith: '_' });

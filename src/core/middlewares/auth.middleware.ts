@@ -6,7 +6,10 @@ import { AppError } from '../errors/AppError';
 
 interface JwtPayload {
   id: string;
+  tokenVersion?: number;
 }
+
+export const COOKIE_NAME = process.env.NODE_ENV === 'production' ? '__Host-context_token' : 'context_token';
 
 export const protect = async (
   req: Request,
@@ -14,16 +17,16 @@ export const protect = async (
   next: NextFunction
 ): Promise<void> => {
   try {
-    let token;
+    let token: string | undefined;
 
-    // 1. Token MUST come from the Authorization: Bearer header only.
-    //    Query-string tokens (?token=...) are NOT accepted — they leak into
-    //    server logs, browser history, and HTTP referrer headers.
-    if (
-      req.headers.authorization &&
-      req.headers.authorization.startsWith('Bearer')
-    ) {
+    // 1. Try Authorization header (for SSE endpoints and non-browser clients)
+    if (req.headers.authorization?.startsWith('Bearer')) {
       token = req.headers.authorization.split(' ')[1];
+    }
+
+    // 2. Fall back to httpOnly cookie (for browser sessions)
+    if (!token && req.cookies && req.cookies[COOKIE_NAME]) {
+      token = req.cookies[COOKIE_NAME];
     }
 
     // 2. If no token is found, kick them out
@@ -43,6 +46,14 @@ export const protect = async (
     const currentUser = await User.findById(decoded.id);
     if (!currentUser) {
       return next(new AppError('The user belonging to this token no longer exists.', 401));
+    }
+
+    // 5.5 Check token version for global logout capability
+    // Existing tokens without tokenVersion default to 0, which matches existing users
+    const tokenVersion = decoded.tokenVersion ?? 0;
+    const userTokenVersion = currentUser.tokenVersion ?? 0;
+    if (tokenVersion !== userTokenVersion) {
+      return next(new AppError('Session expired. Please log in again.', 401));
     }
 
     // 6. Check if the user has been suspended by an admin

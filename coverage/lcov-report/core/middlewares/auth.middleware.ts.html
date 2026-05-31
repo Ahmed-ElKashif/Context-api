@@ -23,16 +23,16 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">93.1% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>22/22</span>
+                <span class='fraction'>27/29</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">82.6% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>12/12</span>
+                <span class='fraction'>19/23</span>
             </div>
         
             
@@ -44,9 +44,9 @@
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">100% </span>
+                <span class="strong">92.85% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>21/21</span>
+                <span class='fraction'>26/28</span>
             </div>
         
             
@@ -122,7 +122,18 @@
 <a name='L57'></a><a href='#L57'>57</a>
 <a name='L58'></a><a href='#L58'>58</a>
 <a name='L59'></a><a href='#L59'>59</a>
-<a name='L60'></a><a href='#L60'>60</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
+<a name='L60'></a><a href='#L60'>60</a>
+<a name='L61'></a><a href='#L61'>61</a>
+<a name='L62'></a><a href='#L62'>62</a>
+<a name='L63'></a><a href='#L63'>63</a>
+<a name='L64'></a><a href='#L64'>64</a>
+<a name='L65'></a><a href='#L65'>65</a>
+<a name='L66'></a><a href='#L66'>66</a>
+<a name='L67'></a><a href='#L67'>67</a>
+<a name='L68'></a><a href='#L68'>68</a>
+<a name='L69'></a><a href='#L69'>69</a>
+<a name='L70'></a><a href='#L70'>70</a>
+<a name='L71'></a><a href='#L71'>71</a></td><td class="line-coverage quiet"><span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-yes">1x</span>
@@ -131,6 +142,9 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -141,13 +155,13 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">7x</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">5x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">7x</span>
+<span class="cline-any cline-no">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -170,6 +184,14 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -189,7 +211,10 @@ import { AppError } from '../errors/AppError';
 &nbsp;
 interface JwtPayload {
   id: string;
+  tokenVersion?: number;
 }
+&nbsp;
+export const COOKIE_NAME = process.env.NODE_ENV === 'production' ? <span class="branch-0 cbranch-no" title="branch not covered" >'__Host-context_token' </span>: 'context_token';
 &nbsp;
 export const protect = async (
   req: Request,
@@ -197,16 +222,16 @@ export const protect = async (
   next: NextFunction
 ): Promise&lt;void&gt; =&gt; {
   try {
-    let token;
+    let token: string | undefined;
 &nbsp;
-    // 1. Token MUST come from the Authorization: Bearer header only.
-    //    Query-string tokens (?token=...) are NOT accepted — they leak into
-    //    server logs, browser history, and HTTP referrer headers.
-    if (
-      req.headers.authorization &amp;&amp;
-      req.headers.authorization.startsWith('Bearer')
-    ) {
+    // 1. Try Authorization header (for SSE endpoints and non-browser clients)
+    if (req.headers.authorization?.startsWith('Bearer')) {
       token = req.headers.authorization.split(' ')[1];
+    }
+&nbsp;
+    // 2. Fall back to httpOnly cookie (for browser sessions)
+    <span class="missing-if-branch" title="if path not taken" >I</span>if (!token &amp;&amp; req.cookies &amp;&amp; <span class="branch-2 cbranch-no" title="branch not covered" >req.cookies[COOKIE_NAME])</span> {
+<span class="cstat-no" title="statement not covered" >      token = req.cookies[COOKIE_NAME];</span>
     }
 &nbsp;
     // 2. If no token is found, kick them out
@@ -228,6 +253,14 @@ export const protect = async (
       return next(new AppError('The user belonging to this token no longer exists.', 401));
     }
 &nbsp;
+    // 5.5 Check token version for global logout capability
+    // Existing tokens without tokenVersion default to 0, which matches existing users
+    const tokenVersion = decoded.tokenVersion ?? 0;
+    const userTokenVersion = currentUser.tokenVersion ?? 0;
+    <span class="missing-if-branch" title="if path not taken" >I</span>if (tokenVersion !== userTokenVersion) {
+<span class="cstat-no" title="statement not covered" >      return next(new AppError('Session expired. Please log in again.', 401));</span>
+    }
+&nbsp;
     // 6. Check if the user has been suspended by an admin
     if (currentUser.isSuspended) {
       return next(new AppError('Your account has been suspended. Please contact support.', 403));
@@ -247,7 +280,7 @@ export const protect = async (
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-05-28T04:10:13.687Z
+                at 2026-05-31T18:08:17.947Z
             </div>
         <script src="../../prettify.js"></script>
         <script>

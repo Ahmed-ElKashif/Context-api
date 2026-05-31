@@ -161,8 +161,8 @@ describe('AdminService', () => {
 
       const rows = csv.split('\n')
       expect(rows[0]).toBe('Username,Email,Full Name,Role,Status,Storage (MB),Suspended,Joined')
-      expect(rows[1]).toBe(`alice,alice@example.com,Alice A,user,active,0.0,No,${new Date('2026-01-01T00:00:00.000Z').toLocaleDateString()}`)
-      expect(rows[2]).toBe(`bob,bob@example.com,Bob B,user,none,0.0,Yes,${new Date('2026-02-01T00:00:00.000Z').toLocaleDateString()}`)
+      expect(rows[1]).toBe(`"alice","alice@example.com","Alice A","user","active","0.0","No","${new Date('2026-01-01T00:00:00.000Z').toLocaleDateString()}"`)
+      expect(rows[2]).toBe(`"bob","bob@example.com","Bob B","user","none","0.0","Yes","${new Date('2026-02-01T00:00:00.000Z').toLocaleDateString()}"`)
     })
   })
 

@@ -15,8 +15,20 @@ const cloudinary = configureCloudinary()
  * Word documents and others are stored as 'raw'.
  * We must pass the correct resource_type to `destroy()` or the deletion silently fails.
  */
+const VALID_FILE_TYPES = [
+  'Image',
+  'PDF',
+  'Word',
+  'Excel',
+  'TextSnippet'
+] as const;
+type FileType = typeof VALID_FILE_TYPES[number];
+
 const getResourceType = (fileType: string): 'image' | 'raw' => {
-  return fileType === 'Image' || fileType === 'PDF' ? 'image' : 'raw'
+  if (!VALID_FILE_TYPES.includes(fileType as FileType)) {
+    console.warn(`[Cloudinary] Unknown fileType: "${fileType}" — defaulting to raw`);
+  }
+  return fileType === 'Image' || fileType === 'PDF' ? 'image' : 'raw';
 }
 
 export class DocumentService {
