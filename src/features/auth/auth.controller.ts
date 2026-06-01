@@ -23,8 +23,11 @@ export const register = async (req: Request, res: Response, next: NextFunction):
     }
     res.cookie(COOKIE_NAME, result.token!, COOKIE_OPTIONS)
 
+    const isNativeClient = req.headers['client-type'] === 'native'
+
     res.status(201).json({
       success: true,
+      token: isNativeClient ? result.token : undefined,
       user: {
         id: result.user?._id,
         fullName: result.user?.fullName,
@@ -57,8 +60,11 @@ export const login = async (req: Request, res: Response, next: NextFunction): Pr
     }
     res.cookie(COOKIE_NAME, result.token!, COOKIE_OPTIONS)
 
+    const isNativeClient = req.headers['client-type'] === 'native'
+
     res.status(200).json({
       success: true,
+      token: isNativeClient ? result.token : undefined,
       user: {
         id: result.user?._id,
         fullName: result.user?.fullName,
