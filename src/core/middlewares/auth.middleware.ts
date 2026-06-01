@@ -22,6 +22,9 @@ export const protect = async (
     // 1. Try Authorization header (for SSE endpoints and non-browser clients)
     if (req.headers.authorization?.startsWith('Bearer')) {
       token = req.headers.authorization.split(' ')[1];
+    } else if (req.query.token) {
+      // 1.5 Try Query string (specifically for EventSource/SSE which cannot send headers)
+      token = req.query.token as string;
     }
 
     // 2. Fall back to httpOnly cookie (for browser sessions)
