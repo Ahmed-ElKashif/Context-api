@@ -4,10 +4,12 @@ import { AppError } from '../../core/errors/AppError'
 import { COOKIE_NAME } from '../../core/middlewares/auth.middleware'
 import { User } from '../users/user.model'
 
-const COOKIE_OPTIONS = {
+import { CookieOptions } from 'express'
+
+const COOKIE_OPTIONS: CookieOptions = {
   httpOnly: true,
   secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
   maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
   path: '/'
 }
@@ -121,7 +123,11 @@ export const logout = async (req: Request, res: Response): Promise<void> => {
     await req.user.save()
   }
   
-  res.clearCookie(COOKIE_NAME, { path: '/' })
+  res.clearCookie(COOKIE_NAME, { 
+    path: '/',
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax'
+  })
   res.status(200).json({ success: true, message: 'Logged out.' })
 }
 

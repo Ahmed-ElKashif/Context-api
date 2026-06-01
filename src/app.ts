@@ -26,6 +26,9 @@ import { csrfProtection } from './core/middlewares/csrf.middleware'
 import analyticsRoutes from './features/analytics/analytics.routes'
 const app: Application = express()
 
+// Trust the reverse proxy (required for Railway/Heroku/Render to pass secure cookies and real IPs)
+app.set('trust proxy', 1)
+
 // ==========================================
 // 🛡️ 1. SECURITY MIDDLEWARES
 // ==========================================
