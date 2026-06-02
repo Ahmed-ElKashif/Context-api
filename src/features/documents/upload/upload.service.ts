@@ -190,7 +190,13 @@ export class UploadService {
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
-      const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8')
+      //Fixed for mobile devices file name issues
+      let originalName = Buffer.from(file.originalname, 'latin1').toString('utf8')
+      try {
+        originalName = decodeURIComponent(originalName)
+      } catch (e) {
+        // Fallback to original if decoding fails
+      }
 
       // ── SHA-256 deduplication ─────────────────────────────────────────────
       const fileHash = crypto.createHash('sha256').update(file.buffer).digest('hex')
